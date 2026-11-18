@@ -136,3 +136,38 @@ crashlytics-build.properties
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# ---- Anomaly my room 추가 ----
+# IDE
+.vs/
+.vscode/
+.idea/
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# 빌드·기타
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+crashlytics-build.properties
+.DS_Store
+Thumbs.db
+
+# 에셋 스토어 에셋: 공개 저장소 재배포 불가(Unity Asset Store EULA / UCL).
+# README의 안내대로 각자 에셋 스토어에서 받아 같은 위치에 임포트할 것
+/Assets/Haons SD series Pack/
+/Assets/Haons SD series Pack.meta
