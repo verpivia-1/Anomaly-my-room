@@ -1,0 +1,17 @@
+{
+    "name": "Anomaly.Presenter",
+    "rootNamespace": "Anomaly.Presenter",
+    "references": [
+        "Anomaly.Model",
+        "Anomaly.View"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
