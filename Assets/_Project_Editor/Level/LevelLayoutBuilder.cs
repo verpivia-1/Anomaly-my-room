@@ -2,9 +2,16 @@
 // 복도 1개 + 방 3개(101 거실, 102 식당, 103 침실)를 만들고 KayKit 가구를 배치해 Assets/Scenes/Level_Corridor.unity 로 저장한다.
 // 좌표는 KayKit 단위(의자 높이 1.26)로 적혀 있고, 마지막에 HAON SD 캐릭터 키에 맞춰 Level 루트 전체를 스케일한다.
 // 다시 실행하면 씬을 새로 만든다(기존 Level_Corridor 씬은 덮어씀).
+// 플레이어(HAON 캐릭터 + CharacterController), 탑뷰 카메라, GameManager까지 연결해 바로 플레이할 수 있게 만든다.
+using Anomaly.Editor.Animations;
+using Anomaly.Model.Player;
+using Anomaly.Presenter.Manager;
+using Anomaly.View.Cameras;
+using Anomaly.View.Player;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 
 namespace Anomaly.Editor.Level
@@ -16,6 +23,10 @@ namespace Anomaly.Editor.Level
         const string CharacterPath = "Assets/Haons SD series Pack/Prefab/CharacterSet/prf_Set Costume01 Unity-Chan.prefab";
         const string MatDir = "Assets/_Project/Materials";
         const string ScenePath = "Assets/Scenes/Level_Corridor.unity";
+        const string InputActionsPath = "Assets/InputSystem_Actions.inputactions";
+        const string MoveActionName = "Player/Move";
+        const string PlayerSettingsDir = "Assets/_Project/Data/Player";
+        const string PlayerSettingsPath = PlayerSettingsDir + "/PlayerMovementSettings.asset";
 
         // 캐릭터 키를 KayKit 단위로 몇으로 볼지. 가구가 너무 크거나 작으면 이 값만 바꿔서 다시 실행.
         const float CharacterHeightInKayKitUnits = 1.6f;
@@ -44,12 +55,13 @@ namespace Anomaly.Editor.Level
             BuildBedroom(Group("Room_103_Bedroom", root));
             BuildLights(Group("Lights", root));
 
-            float s = PlaceScaleReference();
+            float s = BuildPlayer(out var playerView, out var playerInputView);
             root.localScale = Vector3.one * s;
             foreach (var l in root.GetComponentsInChildren<Light>())
                 if (l.type == LightType.Point) l.range *= s;
 
-            BuildCamera(s);
+            var cameraView = BuildCamera(s);
+            BuildGameManager(playerView, playerInputView, cameraView);
 
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.32f, 0.33f, 0.38f);
@@ -187,44 +199,152 @@ namespace Anomaly.Editor.Level
             l.shadows = LightShadows.None;
         }
 
-        // ---------- 카메라(탑뷰 전체 보기) ----------
-        static void BuildCamera(float s)
+        // ---------- 카메라(플레이어를 따라가는 탑뷰) ----------
+        static TopDownCameraView BuildCamera(float s)
         {
             var cam = new GameObject("Main Camera").AddComponent<Camera>();
             cam.tag = "MainCamera";
             cam.fieldOfView = 40;
             cam.backgroundColor = new Color(0.05f, 0.05f, 0.06f);
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.transform.position = new Vector3(0, 26, -16) * s;
-            cam.transform.LookAt(new Vector3(0, 0, 3.5f) * s);
+            cam.transform.position = new Vector3(-9.5f, 10, -6.5f) * s;
+            cam.transform.LookAt(new Vector3(-9.5f, 0, 0) * s);
+
+            var view = cam.gameObject.AddComponent<TopDownCameraView>();
+            SetVector3(view, "offset", new Vector3(0f, 10f, -6.5f) * s);
+            SetFloat(view, "lookHeight", 0.5f * s);
+            return view;
         }
 
-        // ---------- 캐릭터 크기 기준 ----------
-        static float PlaceScaleReference()
+        // ---------- 플레이어 ----------
+        // HAON 캐릭터를 자식으로 두고, 루트에 CharacterController·PlayerView·PlayerInputView를 붙인다.
+        // 캐릭터 키로 Level 스케일을 정해 반환한다.
+        static float BuildPlayer(out PlayerView playerView, out PlayerInputView playerInputView)
         {
+            var player = new GameObject("Player");
+            float h = 1f;
+
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(CharacterPath);
             if (prefab == null)
             {
-                Debug.LogWarning("[LevelLayoutBuilder] 캐릭터 프리팹을 찾지 못해 Level 스케일 0.6을 씀: " + CharacterPath);
-                return 0.6f;
+                Debug.LogWarning("[LevelLayoutBuilder] 캐릭터 프리팹을 찾지 못해 캡슐로 대신함: " + CharacterPath);
+                var capsule = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                Object.DestroyImmediate(capsule.GetComponent<Collider>());
+                capsule.transform.SetParent(player.transform, false);
+                capsule.transform.localPosition = Vector3.up;
+                h = 2f;
             }
-            var ch = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-            ch.name = "ScaleReference_Character (크기 확인용, 삭제 가능)";
-            ch.transform.position = Vector3.zero;
-            float h = 0f;
-            var rs = ch.GetComponentsInChildren<Renderer>();
-            if (rs.Length > 0)
+            else
             {
-                var b = rs[0].bounds;
-                foreach (var r in rs) b.Encapsulate(r.bounds);
-                h = b.size.y;
+                var ch = (GameObject)PrefabUtility.InstantiatePrefab(prefab, player.transform);
+                ch.name = "Character";
+                ch.transform.localPosition = Vector3.zero;
+                ch.transform.localRotation = Quaternion.identity;
+                var rs = ch.GetComponentsInChildren<Renderer>();
+                if (rs.Length > 0)
+                {
+                    var b = rs[0].bounds;
+                    foreach (var r in rs) b.Encapsulate(r.bounds);
+                    if (b.size.y > 0.1f) h = b.size.y;
+                }
+                foreach (var anim in ch.GetComponentsInChildren<Animator>()) anim.applyRootMotion = false;
             }
-            if (h < 0.1f) h = 1f;
+
+            var cc = player.AddComponent<CharacterController>();
+            cc.height = h;
+            cc.radius = h * 0.2f;
+            cc.center = new Vector3(0f, h * 0.5f, 0f);
+            cc.skinWidth = cc.radius * 0.1f;
+            cc.stepOffset = h * 0.25f;
+
+            playerView = player.AddComponent<PlayerView>();
+            SetRef(playerView, "characterController", cc);
+            var playerAnimator = player.GetComponentInChildren<Animator>();
+            SetRef(playerView, "animator", playerAnimator);
+
+            // 대기·걷기 Animator Controller 연결(HAON 프리팹 원본은 그대로, 씬 인스턴스에서만 교체)
+            var animController = PlayerAnimatorBuilder.GetOrCreate();
+            if (playerAnimator != null && animController != null)
+                playerAnimator.runtimeAnimatorController = animController;
+            SetString(playerView, "speedParameter", PlayerAnimatorBuilder.SpeedParameter);
+
+            playerInputView = player.AddComponent<PlayerInputView>();
+            var moveRef = FindInputActionReference(InputActionsPath, MoveActionName);
+            if (moveRef == null) Debug.LogWarning($"[LevelLayoutBuilder] {InputActionsPath}에서 {MoveActionName} 액션을 찾지 못함");
+            SetRef(playerInputView, "moveAction", moveRef);
+
             float s = h / CharacterHeightInKayKitUnits;
-            ch.transform.position = new Vector3(-9.5f, 0, 0) * s;
-            ch.transform.rotation = Quaternion.Euler(0, 90, 0);
+            player.transform.position = new Vector3(-9.5f, 0.05f, 0) * s;
+            player.transform.rotation = Quaternion.Euler(0, 90, 0);
             Debug.Log($"[LevelLayoutBuilder] 캐릭터 키 {h:0.###}m 기준으로 Level 스케일 {s:0.###}");
             return s;
+        }
+
+        static InputActionReference FindInputActionReference(string assetPath, string actionName)
+        {
+            foreach (var obj in AssetDatabase.LoadAllAssetsAtPath(assetPath))
+                if (obj is InputActionReference r && r.action != null &&
+                    $"{r.action.actionMap?.name}/{r.action.name}" == actionName)
+                    return r;
+            return null;
+        }
+
+        // ---------- 진입점 ----------
+        static void BuildGameManager(PlayerView playerView, PlayerInputView playerInputView, TopDownCameraView cameraView)
+        {
+            var manager = new GameObject("GameManager").AddComponent<GameManager>();
+            SetRef(manager, "movementSettings", GetOrCreatePlayerSettings());
+            SetRef(manager, "playerInputView", playerInputView);
+            SetRef(manager, "playerView", playerView);
+            SetRef(manager, "cameraView", cameraView);
+        }
+
+        static PlayerMovementSettings GetOrCreatePlayerSettings()
+        {
+            var settings = AssetDatabase.LoadAssetAtPath<PlayerMovementSettings>(PlayerSettingsPath);
+            if (settings != null) return settings;
+            if (!AssetDatabase.IsValidFolder("Assets/_Project/Data")) AssetDatabase.CreateFolder("Assets/_Project", "Data");
+            if (!AssetDatabase.IsValidFolder(PlayerSettingsDir)) AssetDatabase.CreateFolder("Assets/_Project/Data", "Player");
+            settings = ScriptableObject.CreateInstance<PlayerMovementSettings>();
+            AssetDatabase.CreateAsset(settings, PlayerSettingsPath);
+            AssetDatabase.SaveAssets();
+            return settings;
+        }
+
+        static void SetRef(Object target, string field, Object value)
+        {
+            var so = new SerializedObject(target);
+            var prop = so.FindProperty(field);
+            if (prop == null) { Debug.LogWarning($"[LevelLayoutBuilder] {target.GetType().Name}.{field} 필드 없음"); return; }
+            prop.objectReferenceValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static void SetVector3(Object target, string field, Vector3 value)
+        {
+            var so = new SerializedObject(target);
+            var prop = so.FindProperty(field);
+            if (prop == null) { Debug.LogWarning($"[LevelLayoutBuilder] {target.GetType().Name}.{field} 필드 없음"); return; }
+            prop.vector3Value = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static void SetString(Object target, string field, string value)
+        {
+            var so = new SerializedObject(target);
+            var prop = so.FindProperty(field);
+            if (prop == null) { Debug.LogWarning($"[LevelLayoutBuilder] {target.GetType().Name}.{field} 필드 없음"); return; }
+            prop.stringValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static void SetFloat(Object target, string field, float value)
+        {
+            var so = new SerializedObject(target);
+            var prop = so.FindProperty(field);
+            if (prop == null) { Debug.LogWarning($"[LevelLayoutBuilder] {target.GetType().Name}.{field} 필드 없음"); return; }
+            prop.floatValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         // ---------- 도우미 ----------
@@ -257,6 +377,10 @@ namespace Anomaly.Editor.Level
                 for (int i = 0; i < mats.Length; i++) mats[i] = atlasMat;
                 r.sharedMaterials = mats;
             }
+            // 플레이어가 통과하지 않도록 메시마다 BoxCollider. 러그는 밟고 지나가므로 제외
+            if (!model.StartsWith("rug_"))
+                foreach (var mf in go.GetComponentsInChildren<MeshFilter>())
+                    if (mf.GetComponent<Collider>() == null) mf.gameObject.AddComponent<BoxCollider>();
             return go;
         }
 

@@ -54,7 +54,7 @@ public float MoveSpeed => moveSpeed;
   - 예외: 게임 규칙과 무관하고 게임 상태를 갖지 않는 공용 서비스(사운드 재생, 로그 등)는 싱글톤을 허용한다.
   - 예외에 해당해도 맵 진행, 판정, 이상현상, 플레이어 상태 같은 게임 상태를 그 안에 두지 않는다.
   - 에디터 전용 스크립트(`Assets/_Project_Editor`)는 이 규칙의 대상이 아니다.
-- 의존성은 씬마다 진입점 MonoBehaviour 하나(예: `GameInstaller`)에서 생성·연결한다.
+- 의존성은 씬마다 진입점 MonoBehaviour 하나(예: `GameManager`)에서 생성·연결한다.
 
 ## 3. 데이터
 
