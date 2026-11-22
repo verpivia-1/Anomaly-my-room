@@ -40,6 +40,14 @@ namespace Anomaly.Editor.Level
         const string RuleSettingsPath = DataDir + "/Rules/GameRuleSettings.asset";
         const string AnomalyDir = DataDir + "/Anomalies";
         const string AnomalyCatalogPath = AnomalyDir + "/AnomalyCatalog.asset";
+        // 페이드 이미지. 이 경로에 넣고(Texture Type: Sprite) Build Level Layout을 다시 실행하면 연결됨
+        const string FadeImageDir = "Assets/_Project/Art/UI/Fade";
+        const string FadeSleepImagePath = FadeImageDir + "/Fade_Sleep.png";
+        const string FadeLeaveImagePath = FadeImageDir + "/Fade_Leave.png";
+        // 정답/오답 효과음. 이 이름(.wav/.ogg/.mp3)으로 넣고 다시 실행하면 연결됨
+        const string SfxDir = "Assets/_Project/Audio/SFX";
+        const string SfxCorrectName = "SFX_Correct";
+        const string SfxWrongName = "SFX_Wrong";
         const string PlayerSettingsDir = "Assets/_Project/Data/Player";
         const string PlayerSettingsPath = PlayerSettingsDir + "/PlayerMovementSettings.asset";
 
@@ -76,6 +84,9 @@ namespace Anomaly.Editor.Level
             startPoint = null;
             mapSign = null;
             anomalyTargets.Clear();
+            colorCounts.Clear();
+            swapCounts.Clear();
+            colorIndex = 0;
             uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); // OS 글꼴로 한글 표시
 
             var root = new GameObject("Level").transform;
@@ -97,8 +108,8 @@ namespace Anomaly.Editor.Level
             SetFloat(bedZone, "checkHeight", 0.5f * s);
 
             var cameraView = BuildCamera(s, out var wallFadeView);
-            BuildUI(out var popup, out var ending);
-            BuildGameManager(playerView, playerInputView, cameraView, wallFadeView, popup, ending);
+            BuildUI(out var popup, out var ending, out var screenFade, out var prompt, out var feedback);
+            BuildGameManager(playerView, playerInputView, cameraView, wallFadeView, popup, ending, screenFade, prompt, feedback);
 
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.32f, 0.33f, 0.38f);
@@ -228,42 +239,46 @@ namespace Anomaly.Editor.Level
         }
 
         // ---------- 101 거실 (x -12..-4) ----------
+        // Anom(가구, 방, 교체 모델): 가구마다 색상 변경 이상현상 1개 + 교체 모델이 있으면 모델 교체 1개 (기획서 3장)
+        const AnomalyRoom Living = AnomalyRoom.Living101, Dining = AnomalyRoom.Dining102, Bedroom = AnomalyRoom.Bedroom103;
+
         static void BuildLiving(Transform p)
         {
-            Prop("rug_rectangle_A", p, -8, 0, 6.3f, 0);
-            Prop("couch_pillows", p, -8, 0, 9.1f, 0);
-            Prop("table_low", p, -8, 0, 6.6f, 0);
-            Prop("armchair", p, -11, 0, 6.0f, -90);
-            Prop("cabinet_medium_decorated", p, -4.6f, 0, 6.3f, -90);
-            Prop("lamp_standing", p, -11.2f, 0, 9.2f, 0);
-            Prop("pictureframe_large_B", p, -8, 2.6f, 10, 180);
-            Prop("shelf_B_large_decorated", p, -12, 2.2f, 4.0f, 90);
-            Prop("cactus_medium_A", p, -4.8f, 0, 9.3f, 0);
+            Anom(Prop("rug_rectangle_A", p, -8, 0, 6.3f, 0), Living, "rug_rectangle_stripes_A");
+            Anom(Prop("couch_pillows", p, -8, 0, 9.1f, 0), Living, "couch");
+            Anom(Prop("table_low", p, -8, 0, 6.6f, 0), Living);
+            Anom(Prop("armchair", p, -11, 0, 6.0f, -90), Living, "armchair_pillows");
+            Anom(Prop("cabinet_medium_decorated", p, -4.6f, 0, 6.3f, -90), Living, "cabinet_medium");
+            Anom(Prop("lamp_standing", p, -11.2f, 0, 9.2f, 0), Living);
+            Anom(Prop("pictureframe_large_B", p, -8, 2.6f, 10, 180), Living);
+            Anom(Prop("shelf_B_large_decorated", p, -12, 2.2f, 4.0f, 90), Living, "shelf_B_large");
+            Anom(Prop("cactus_medium_A", p, -4.8f, 0, 9.3f, 0), Living, "cactus_medium_B");
         }
 
         // ---------- 102 식당 (x -4..4) ----------
         static void BuildDining(Transform p)
         {
-            Prop("rug_oval_A", p, 0, 0, 6.4f, 0);
-            Prop("table_medium_long", p, 0, 0, 6.4f, 0);
-            Prop("chair_A", p, -0.75f, 0, 4.9f, 0);
-            Prop("chair_A", p, 0.75f, 0, 4.9f, 0);
-            Prop("chair_A", p, -0.75f, 0, 7.9f, 180);
-            Prop("chair_A", p, 0.75f, 0, 7.9f, 180);
-            Prop("cabinet_medium_decorated", p, -2.2f, 0, 9.45f, 180);
-            Prop("cabinet_medium", p, 2.2f, 0, 9.45f, 180);
-            Prop("book_set", p, 1.7f, 1.25f, 9.45f, 180);
-            Prop("lamp_table", p, 2.8f, 1.0f, 9.45f, 0);
-            Prop("pictureframe_medium", p, 0, 2.6f, 10, 180);
-            Prop("shelf_B_small_decorated", p, -3.9f, 2.0f, 4.0f, 90);
-            Prop("cactus_small_A", p, 3.4f, 0, 2.7f, 0);
+            Anom(Prop("rug_oval_A", p, 0, 0, 6.4f, 0), Dining, "rug_oval_B");
+            Anom(Prop("table_medium_long", p, 0, 0, 6.4f, 0), Dining);
+            // 의자 4개는 각각 별도 이상현상. 교체 모델은 나무 의자 / 다른 모양 의자를 번갈아 씀
+            Anom(Prop("chair_A", p, -0.75f, 0, 4.9f, 0), Dining, "chair_A_wood");
+            Anom(Prop("chair_A", p, 0.75f, 0, 4.9f, 0), Dining, "chair_B");
+            Anom(Prop("chair_A", p, -0.75f, 0, 7.9f, 180), Dining, "chair_B");
+            Anom(Prop("chair_A", p, 0.75f, 0, 7.9f, 180), Dining, "chair_A_wood");
+            Anom(Prop("cabinet_medium_decorated", p, -2.2f, 0, 9.45f, 180), Dining, "cabinet_medium");
+            Anom(Prop("cabinet_medium", p, 2.2f, 0, 9.45f, 180), Dining, "cabinet_medium_decorated");
+            Anom(Prop("book_set", p, 1.7f, 1.25f, 9.45f, 180), Dining);
+            Anom(Prop("lamp_table", p, 2.8f, 1.0f, 9.45f, 0), Dining);
+            Anom(Prop("pictureframe_medium", p, 0, 2.6f, 10, 180), Dining);
+            Anom(Prop("shelf_B_small_decorated", p, -3.9f, 2.0f, 4.0f, 90), Dining, "shelf_B_small");
+            Anom(Prop("cactus_small_A", p, 3.4f, 0, 2.7f, 0), Dining, "cactus_small_B");
         }
 
         // ---------- 103 침실 (x 4..12) ----------
         static void BuildBedroom(Transform p)
         {
-            Prop("rug_oval_B", p, 8, 0, 5.2f, 0);
-            Prop("bed_double_A", p, 9, 0, 8.4f, 180);
+            Anom(Prop("rug_oval_B", p, 8, 0, 5.2f, 0), Bedroom, "rug_oval_A");
+            Prop("bed_double_A", p, 9, 0, 8.4f, 180); // 도착점이라 이상현상에서 제외
             // 도착점: 침대 상호작용 위치(빈 오브젝트). 상호작용 스크립트는 나중에 여기에 붙인다
             var goal = new GameObject("Goal_BedInteract");
             goal.transform.SetParent(p, false);
@@ -274,15 +289,68 @@ namespace Anomaly.Editor.Level
             col.size = new Vector3(3, 2, 1.5f);
             bedZone = goal.AddComponent<InteractZoneView>();
             SetRef(bedZone, "zone", col);
-            Prop("table_small", p, 11.3f, 0, 9.35f, 0);
-            Prop("lamp_table", p, 11.3f, 1.0f, 9.35f, 0);
-            Prop("table_small", p, 6.6f, 0, 9.35f, 0);
-            Prop("pictureframe_standing_A", p, 6.6f, 1.0f, 9.35f, 180);
-            Prop("cabinet_small_decorated", p, 11.35f, 0, 4.0f, -90);
-            Prop("chair_C", p, 5.2f, 0, 4.2f, 90);
-            Prop("shelf_B_small", p, 4.1f, 2.0f, 5.0f, 90);
-            Prop("pictureframe_small_A", p, 9, 2.6f, 10, 180);
-            Prop("cactus_small_B", p, 4.7f, 0, 2.7f, 0);
+            Anom(Prop("table_small", p, 11.3f, 0, 9.35f, 0), Bedroom);
+            Anom(Prop("lamp_table", p, 11.3f, 1.0f, 9.35f, 0), Bedroom);
+            Anom(Prop("table_small", p, 6.6f, 0, 9.35f, 0), Bedroom);
+            Anom(Prop("pictureframe_standing_A", p, 6.6f, 1.0f, 9.35f, 180), Bedroom, "pictureframe_standing_B");
+            Anom(Prop("cabinet_small_decorated", p, 11.35f, 0, 4.0f, -90), Bedroom, "cabinet_small");
+            Anom(Prop("chair_C", p, 5.2f, 0, 4.2f, 90), Bedroom, "chair_B");
+            Anom(Prop("shelf_B_small", p, 4.1f, 2.0f, 5.0f, 90), Bedroom, "shelf_B_small_decorated");
+            Anom(Prop("pictureframe_small_A", p, 9, 2.6f, 10, 180), Bedroom, "pictureframe_small_C");
+            Anom(Prop("cactus_small_B", p, 4.7f, 0, 2.7f, 0), Bedroom, "cactus_small_A");
+        }
+
+        // ---------- 방 가구 이상현상(보통) ----------
+        // ID 규칙: 방 글자(L 거실, D 식당, B 침실) + 종류(C 색상, S 모델 교체) + 방 안 순번. 예: LC01, DS03
+        // 색은 아래 표를 순서대로 돌려 쓴다(KayKit 아틀라스 텍스처에 곱해짐)
+        static readonly Color[] AnomalyColors =
+        {
+            new Color(1f, 0.45f, 0.45f), new Color(0.45f, 0.6f, 1f), new Color(0.5f, 1f, 0.5f),
+            new Color(0.85f, 0.5f, 1f), new Color(1f, 0.8f, 0.35f), new Color(0.4f, 1f, 1f),
+        };
+        static readonly Dictionary<AnomalyRoom, int> colorCounts = new Dictionary<AnomalyRoom, int>();
+        static readonly Dictionary<AnomalyRoom, int> swapCounts = new Dictionary<AnomalyRoom, int>();
+        static int colorIndex;
+
+        static void Anom(GameObject prop, AnomalyRoom room, string swapTo = null)
+        {
+            if (prop == null) return;
+            string model = prop.name;
+            string code = room == AnomalyRoom.Living101 ? "L" : room == AnomalyRoom.Dining102 ? "D" : "B";
+
+            int c = NextCount(colorCounts, room);
+            string colorId = $"{code}C{c:00}";
+            GetOrCreateAnomaly($"{colorId}_{model}_Color", colorId, AnomalyDifficulty.Normal, room, AnomalyKind.ColorChange, $"{model} 색상 변경");
+            var colorView = prop.AddComponent<ColorAnomalyView>();
+            SetString(colorView, "anomalyId", colorId);
+            SetRefArray(colorView, "renderers", prop.GetComponentsInChildren<Renderer>());
+            SetColor(colorView, "color", AnomalyColors[colorIndex++ % AnomalyColors.Length]);
+            anomalyTargets.Add(colorView);
+
+            if (string.IsNullOrEmpty(swapTo)) return;
+
+            // 교체 모델을 같은 자리에 꺼진 채로 만들어 둔다
+            var t = prop.transform;
+            var replacement = Prop(swapTo, t.parent, t.localPosition.x, t.localPosition.y, t.localPosition.z, t.localEulerAngles.y);
+            if (replacement == null) return;
+            replacement.name = $"{swapTo}__Swap_{model}";
+            replacement.SetActive(false);
+
+            int sIdx = NextCount(swapCounts, room);
+            string swapId = $"{code}S{sIdx:00}";
+            GetOrCreateAnomaly($"{swapId}_{model}_To_{swapTo}", swapId, AnomalyDifficulty.Normal, room, AnomalyKind.ModelSwap, $"{model} → {swapTo} 모델 교체");
+            var swapView = prop.AddComponent<ModelSwapAnomalyView>();
+            SetString(swapView, "anomalyId", swapId);
+            SetRef(swapView, "original", prop);
+            SetRef(swapView, "replacement", replacement);
+            anomalyTargets.Add(swapView);
+        }
+
+        static int NextCount(Dictionary<AnomalyRoom, int> counts, AnomalyRoom room)
+        {
+            counts.TryGetValue(room, out int n);
+            counts[room] = ++n;
+            return n;
         }
 
         // ---------- 조명 ----------
@@ -337,7 +405,8 @@ namespace Anomaly.Editor.Level
         }
 
         // ---------- 화면 UI: 확인 팝업, 엔딩 ----------
-        static void BuildUI(out ConfirmPopupView popup, out EndingView ending)
+        static void BuildUI(out ConfirmPopupView popup, out EndingView ending, out ScreenFadeView screenFade,
+            out InteractPromptView prompt, out MapFeedbackView feedback)
         {
             var esGo = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
             var eventSystem = esGo.GetComponent<EventSystem>();
@@ -386,6 +455,96 @@ namespace Anomaly.Editor.Level
             ending = endingRoot.AddComponent<EndingView>();
             SetRef(ending, "panel", endingPanel);
             endingPanel.SetActive(false);
+
+            // 상호작용 안내(화면 아래 가운데)
+            var promptRoot = new GameObject("InteractPrompt", typeof(RectTransform));
+            promptRoot.transform.SetParent(canvasGo.transform, false);
+            Stretch((RectTransform)promptRoot.transform);
+            var promptPanel = new GameObject("Panel", typeof(RectTransform), typeof(Image));
+            promptPanel.transform.SetParent(promptRoot.transform, false);
+            var promptRt = (RectTransform)promptPanel.transform;
+            promptRt.anchorMin = promptRt.anchorMax = new Vector2(0.5f, 0f);
+            promptRt.pivot = new Vector2(0.5f, 0f);
+            promptRt.anchoredPosition = new Vector2(0, 120);
+            promptRt.sizeDelta = new Vector2(360, 70);
+            var promptImg = promptPanel.GetComponent<Image>();
+            promptImg.color = new Color(0.1f, 0.11f, 0.14f, 0.8f);
+            promptImg.raycastTarget = false;
+            var promptLabel = CreateText(promptPanel.transform, "Label", "", 34, Vector2.zero, promptRt.sizeDelta);
+            prompt = promptRoot.AddComponent<InteractPromptView>();
+            SetRef(prompt, "panel", promptPanel);
+            SetRef(prompt, "label", promptLabel);
+            promptPanel.SetActive(false);
+
+            // 정답/오답 피드백(화면 위 가운데)
+            var feedbackGo = new GameObject("MapFeedback", typeof(RectTransform), typeof(CanvasGroup), typeof(AudioSource));
+            feedbackGo.transform.SetParent(canvasGo.transform, false);
+            Stretch((RectTransform)feedbackGo.transform);
+            var feedbackGroup = feedbackGo.GetComponent<CanvasGroup>();
+            feedbackGroup.alpha = 0f;
+            feedbackGroup.blocksRaycasts = false;
+            feedbackGroup.interactable = false;
+            var feedbackLabel = CreateText(feedbackGo.transform, "Label", "", 56, Vector2.zero, new Vector2(1200, 100));
+            var feedbackRt = (RectTransform)feedbackLabel.transform;
+            feedbackRt.anchorMin = feedbackRt.anchorMax = new Vector2(0.5f, 1f);
+            feedbackRt.anchoredPosition = new Vector2(0, -140);
+            feedbackLabel.gameObject.AddComponent<Outline>().effectColor = new Color(0, 0, 0, 0.7f);
+            var audio = feedbackGo.GetComponent<AudioSource>();
+            audio.playOnAwake = false;
+            audio.spatialBlend = 0f;
+            feedback = feedbackGo.AddComponent<MapFeedbackView>();
+            SetRef(feedback, "canvasGroup", feedbackGroup);
+            SetRef(feedback, "label", feedbackLabel);
+            SetRef(feedback, "audioSource", audio);
+            SetRef(feedback, "correctClip", LoadSfx(SfxCorrectName));
+            SetRef(feedback, "wrongClip", LoadSfx(SfxWrongName));
+
+            // 맵 전환 페이드. 마지막 자식이라 팝업·엔딩보다 위에 그려짐. 배경색 판 + 그 위 이미지
+            var fadeGo = new GameObject("ScreenFade", typeof(RectTransform), typeof(Image), typeof(CanvasGroup));
+            fadeGo.transform.SetParent(canvasGo.transform, false);
+            Stretch((RectTransform)fadeGo.transform);
+            var fadeBackground = fadeGo.GetComponent<Image>();
+            fadeBackground.color = Color.black;
+            var group = fadeGo.GetComponent<CanvasGroup>();
+            group.alpha = 0f;
+            group.blocksRaycasts = false;
+            group.interactable = false;
+
+            var pictureGo = new GameObject("Picture", typeof(RectTransform), typeof(Image));
+            pictureGo.transform.SetParent(fadeGo.transform, false);
+            Stretch((RectTransform)pictureGo.transform);
+            var picture = pictureGo.GetComponent<Image>();
+            picture.preserveAspect = true; // 비율 유지한 채 화면에 맞춤
+            picture.raycastTarget = false;
+            picture.enabled = false;
+
+            screenFade = fadeGo.AddComponent<ScreenFadeView>();
+            SetRef(screenFade, "canvasGroup", group);
+            SetRef(screenFade, "background", fadeBackground);
+            SetRef(screenFade, "picture", picture);
+            SetRef(screenFade, "sleepImage", LoadFadeImage(FadeSleepImagePath));
+            SetRef(screenFade, "leaveImage", LoadFadeImage(FadeLeaveImagePath));
+        }
+
+        static AudioClip LoadSfx(string name)
+        {
+            EnsureFolder(SfxDir);
+            foreach (var ext in new[] { ".wav", ".ogg", ".mp3" })
+            {
+                var clip = AssetDatabase.LoadAssetAtPath<AudioClip>($"{SfxDir}/{name}{ext}");
+                if (clip != null) return clip;
+            }
+            Debug.Log($"[LevelLayoutBuilder] 효과음 없음(소리 없이 진행): {SfxDir}/{name}.wav");
+            return null;
+        }
+
+        static Sprite LoadFadeImage(string path)
+        {
+            EnsureFolder(FadeImageDir);
+            var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+            if (sprite == null)
+                Debug.LogWarning($"[LevelLayoutBuilder] 페이드 이미지 없음(배경색만 나옴): {path} — PNG를 넣고 Texture Type을 Sprite로 바꾼 뒤 다시 실행");
+            return sprite;
         }
 
         static Text CreateText(Transform parent, string name, string text, int size, Vector2 pos, Vector2 box)
@@ -507,7 +666,8 @@ namespace Anomaly.Editor.Level
 
         // ---------- 진입점 ----------
         static void BuildGameManager(PlayerView playerView, PlayerInputView playerInputView, TopDownCameraView cameraView,
-            WallFadeView wallFadeView, ConfirmPopupView popup, EndingView ending)
+            WallFadeView wallFadeView, ConfirmPopupView popup, EndingView ending, ScreenFadeView screenFade,
+            InteractPromptView prompt, MapFeedbackView feedback)
         {
             var manager = new GameObject("GameManager").AddComponent<GameManager>();
             SetRef(manager, "movementSettings", GetOrCreatePlayerSettings());
@@ -524,6 +684,9 @@ namespace Anomaly.Editor.Level
             SetRef(manager, "mapSign", mapSign);
             SetRef(manager, "confirmPopup", popup);
             SetRef(manager, "endingView", ending);
+            SetRef(manager, "screenFade", screenFade);
+            SetRef(manager, "interactPrompt", prompt);
+            SetRef(manager, "mapFeedback", feedback);
         }
 
         // ---------- 데이터 에셋 ----------

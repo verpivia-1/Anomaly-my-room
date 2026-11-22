@@ -36,6 +36,9 @@ namespace Anomaly.Presenter.Manager
         [Header("UI")]
         [SerializeField] private ConfirmPopupView confirmPopup;
         [SerializeField] private EndingView endingView;
+        [SerializeField] private ScreenFadeView screenFade;
+        [SerializeField] private InteractPromptView interactPrompt;
+        [SerializeField] private MapFeedbackView mapFeedback;
 
         private PlayerModel playerModel;
         private LoopModel loopModel;
@@ -67,9 +70,9 @@ namespace Anomaly.Presenter.Manager
 
             playerMovement = new PlayerMovementPresenter(playerModel, movementSettings, playerInputView, playerView);
             loopPresenter = new LoopPresenter(loopModel, ruleSettings, pool, random, anomalies,
-                playerView, cameraView, startPoint, mapSign, endingView);
+                playerView, cameraView, startPoint, mapSign, endingView, screenFade, mapFeedback);
             decisionPresenter = new DecisionPresenter(loopModel, playerModel, loopPresenter,
-                playerInputView, bedZone, exitZone, confirmPopup);
+                playerInputView, bedZone, exitZone, confirmPopup, interactPrompt);
 
             bedZone.SetTarget(playerView.transform);
             exitZone.SetTarget(playerView.transform);

@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7d878caaa6d537e448ec40b873682703, type: 3}
+  m_Name: ANM_DS07_cabinet_medium_To_cabinet_medium_decorated
+  m_EditorClassIdentifier: Anomaly.Model::Anomaly.Model.Anomalies.AnomalyData
+  id: DS07
+  difficulty: 1
+  room: 2
+  kind: 1
+  description: "cabinet_medium \u2192 cabinet_medium_decorated \uBAA8\uB378 \uAD50\uCCB4"

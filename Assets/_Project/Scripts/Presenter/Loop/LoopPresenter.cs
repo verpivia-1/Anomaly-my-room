@@ -22,10 +22,16 @@ namespace Anomaly.Presenter.Loop
         private readonly Transform startPoint;
         private readonly MapNumberSignView mapSign;
         private readonly EndingView ending;
+        private readonly ScreenFadeView fade;
+        private readonly MapFeedbackView feedback;
+
+        private const string CorrectMessageFormat = "{0}번 맵";
+        private const string WrongMessage = "처음으로 돌아왔다";
 
         public LoopPresenter(LoopModel loop, GameRuleSettings rules, AnomalyPool pool, Random random,
             AnomalyPresenter anomalies, PlayerView playerView, TopDownCameraView cameraView,
-            Transform startPoint, MapNumberSignView mapSign, EndingView ending)
+            Transform startPoint, MapNumberSignView mapSign, EndingView ending, ScreenFadeView fade,
+            MapFeedbackView feedback)
         {
             this.loop = loop;
             this.rules = rules;
@@ -37,6 +43,8 @@ namespace Anomaly.Presenter.Loop
             this.startPoint = startPoint;
             this.mapSign = mapSign;
             this.ending = ending;
+            this.fade = fade;
+            this.feedback = feedback;
         }
 
         public void StartLoop()
@@ -56,6 +64,16 @@ namespace Anomaly.Presenter.Loop
             // 1) 정답/오답 판정: 이상현상이 있으면 나가기, 없으면 잠들기가 정답
             bool correct = (decision == Decision.Leave) == loop.HasAnomaly;
 
+            // 화면을 다 덮은 뒤에 맵을 바꾼다(이상현상이 바뀌는 순간과 순간이동이 안 보이게)
+            // 잠들기와 나가기는 다른 페이드(배경색·이미지)를 씀
+            var kind = decision == Decision.Sleep ? ScreenFadeKind.Sleep : ScreenFadeKind.Leave;
+            if (fade != null) fade.FadeOut(kind, () => ApplyTransition(correct));
+            else ApplyTransition(correct);
+        }
+
+        // 2) ~ 7). 화면이 검게 덮인 동안 실행
+        private void ApplyTransition(bool correct)
+        {
             // 2) 현재 이상현상 원래대로 되돌리기
             anomalies.Revert(loop.CurrentAnomaly);
 
@@ -68,6 +86,7 @@ namespace Anomaly.Presenter.Loop
                 loop.EnterMap(next, false, null);
                 loop.SetPhase(LoopPhase.Cleared);
                 if (ending != null) ending.Show();
+                FadeIn(null); // 엔딩 화면이 드러남
                 return;
             }
 
@@ -75,8 +94,26 @@ namespace Anomaly.Presenter.Loop
             EnterMap(next);
             // 6) 플레이어를 시작 위치로
             MovePlayerToStart();
-            // 7) 판정·이동 잠금 해제
-            loop.SetPhase(LoopPhase.Playing);
+            // 7) 페이드 인이 끝나면 판정·이동 잠금 해제 + 정답/오답 피드백
+            int mapNumber = loop.MapNumber;
+            FadeIn(() =>
+            {
+                loop.SetPhase(LoopPhase.Playing);
+                ShowFeedback(correct, mapNumber);
+            });
+        }
+
+        private void ShowFeedback(bool correct, int mapNumber)
+        {
+            if (feedback != null)
+                feedback.Show(correct, correct ? string.Format(CorrectMessageFormat, mapNumber) : WrongMessage);
+            if (mapSign != null) mapSign.Highlight(correct);
+        }
+
+        private void FadeIn(System.Action onCleared)
+        {
+            if (fade != null) fade.FadeIn(onCleared);
+            else onCleared?.Invoke();
         }
 
         public void MovePlayerToStart()

@@ -15,6 +15,12 @@ namespace Anomaly.View.Player
 
         public event Action<Vector2> MoveInputChanged;
         public event Action InteractPressed;
+
+        // 안내 문구에 쓸 상호작용 키 이름(첫 번째 바인딩, Hold 같은 표시는 뺌). 연결이 없으면 "E"
+        public string InteractKeyName =>
+            interactAction != null && interactAction.action != null && interactAction.action.bindings.Count > 0
+                ? interactAction.action.GetBindingDisplayString(0, InputBinding.DisplayStringOptions.DontIncludeInteractions)
+                : "E";
         
         private void OnEnable()
         {

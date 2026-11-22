@@ -25,9 +25,11 @@ namespace Anomaly.Presenter.Loop
         private readonly InteractZoneView bedZone;
         private readonly InteractZoneView exitZone;
         private readonly ConfirmPopupView popup;
+        private readonly InteractPromptView prompt;
 
         public DecisionPresenter(LoopModel loop, PlayerModel player, LoopPresenter loopPresenter,
-            PlayerInputView input, InteractZoneView bedZone, InteractZoneView exitZone, ConfirmPopupView popup)
+            PlayerInputView input, InteractZoneView bedZone, InteractZoneView exitZone, ConfirmPopupView popup,
+            InteractPromptView prompt)
         {
             this.loop = loop;
             this.player = player;
@@ -36,8 +38,11 @@ namespace Anomaly.Presenter.Loop
             this.bedZone = bedZone;
             this.exitZone = exitZone;
             this.popup = popup;
+            this.prompt = prompt;
 
             loop.PhaseChanged += OnPhaseChanged;
+            bedZone.Entered += RefreshPrompt;
+            bedZone.Exited += RefreshPrompt;
             input.InteractPressed += OnInteractPressed;
             exitZone.Entered += OnExitZoneEntered;
             popup.Confirmed += OnConfirmed;
@@ -47,6 +52,8 @@ namespace Anomaly.Presenter.Loop
         public void Dispose()
         {
             loop.PhaseChanged -= OnPhaseChanged;
+            bedZone.Entered -= RefreshPrompt;
+            bedZone.Exited -= RefreshPrompt;
             input.InteractPressed -= OnInteractPressed;
             exitZone.Entered -= OnExitZoneEntered;
             popup.Confirmed -= OnConfirmed;
@@ -57,6 +64,17 @@ namespace Anomaly.Presenter.Loop
         private void OnPhaseChanged(LoopPhase phase)
         {
             player.SetCanMove(phase == LoopPhase.Playing);
+            RefreshPrompt();
+        }
+
+        // 침대 앞에 서 있고 조작할 수 있을 때만 "E  잠들기" 안내
+        private void RefreshPrompt()
+        {
+            if (prompt == null) return;
+            if (loop.Phase == LoopPhase.Playing && bedZone.IsInside)
+                prompt.Show($"{input.InteractKeyName}  {SleepConfirm}");
+            else
+                prompt.Hide();
         }
 
         // 잠들기: 침대 앞에서 상호작용
