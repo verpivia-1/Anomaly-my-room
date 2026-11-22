@@ -2,7 +2,8 @@
     "name": "Anomaly.View",
     "rootNamespace": "Anomaly.View",
     "references": [
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "UnityEngine.UI"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

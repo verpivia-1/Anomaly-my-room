@@ -45,6 +45,15 @@ namespace Anomaly.View.Player
             transform.rotation = Quaternion.RotateTowards(transform.rotation, target, degreesPerSecond * deltaTime);
         }
 
+        // 맵 전환·나가지 않기 때 시작 지점으로 순간이동. CharacterController가 켜져 있으면 위치를 덮어써서 꺼두고 옮김
+        public void Teleport(Vector3 position, Quaternion rotation)
+        {
+            characterController.enabled = false;
+            transform.SetPositionAndRotation(position, rotation);
+            characterController.enabled = true;
+            if (hasSpeedParameter) animator.SetFloat(speedHash, 0f);
+        }
+
         private void Reset()
         {
             characterController = GetComponent<CharacterController>();

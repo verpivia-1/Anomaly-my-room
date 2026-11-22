@@ -3,16 +3,26 @@
 // 좌표는 KayKit 단위(의자 높이 1.26)로 적혀 있고, 마지막에 HAON SD 캐릭터 키에 맞춰 Level 루트 전체를 스케일한다.
 // 다시 실행하면 씬을 새로 만든다(기존 Level_Corridor 씬은 덮어씀).
 // 플레이어(HAON 캐릭터 + CharacterController), 탑뷰 카메라, GameManager까지 연결해 바로 플레이할 수 있게 만든다.
+// 판정용 오브젝트(출구 지역, 침대 지역, 시작 지점, 맵 번호 푯말, 확인 팝업, 엔딩)와 규칙·이상현상 데이터 에셋도 여기서 만들고 연결한다.
+using System.Collections.Generic;
 using Anomaly.Editor.Animations;
+using Anomaly.Model.Anomalies;
+using Anomaly.Model.Loop;
 using Anomaly.Model.Player;
 using Anomaly.Presenter.Manager;
+using Anomaly.View.Anomalies;
 using Anomaly.View.Cameras;
+using Anomaly.View.Interaction;
 using Anomaly.View.Player;
+using Anomaly.View.UI;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.Rendering;
+using UnityEngine.UI;
 
 namespace Anomaly.Editor.Level
 {
@@ -25,6 +35,11 @@ namespace Anomaly.Editor.Level
         const string ScenePath = "Assets/Scenes/Level_Corridor.unity";
         const string InputActionsPath = "Assets/InputSystem_Actions.inputactions";
         const string MoveActionName = "Player/Move";
+        const string InteractActionName = "Player/Interact";
+        const string DataDir = "Assets/_Project/Data";
+        const string RuleSettingsPath = DataDir + "/Rules/GameRuleSettings.asset";
+        const string AnomalyDir = DataDir + "/Anomalies";
+        const string AnomalyCatalogPath = AnomalyDir + "/AnomalyCatalog.asset";
         const string PlayerSettingsDir = "Assets/_Project/Data/Player";
         const string PlayerSettingsPath = PlayerSettingsDir + "/PlayerMovementSettings.asset";
 
@@ -32,10 +47,20 @@ namespace Anomaly.Editor.Level
         const float CharacterHeightInKayKitUnits = 1.6f;
 
         const float WallH = 4f, WallT = 0.2f;
-        // 탑뷰 규칙: 카메라는 남쪽 위에서 북쪽을 본다. 카메라 쪽(남쪽)을 막는 벽은 세우지 않거나 낮게 둔다.
-        const float LowWallH = 0.4f; // 복도와 방 사이 벽 높이(방 안이 가리지 않게)
+        // 탑뷰 규칙: 카메라는 남쪽 위에서 북쪽을 본다. 카메라 쪽(남쪽)을 막는 벽은 세우지 않는다.
+        // 복도와 방 사이 벽은 전체 높이로 세우고, 플레이어를 가리면 FadeableView로 투명 처리한다.
 
-        static Material atlasMat, wallMat, roomFloorMat, corridorFloorMat, corridorFloorMatB, groutMat, forwardMat, backMat;
+        // 시작 지점(KayKit 단위). 출구 지역(x -12..-10.8) 밖에 둬야 나가지 않기 뒤 다시 들어올 때 팝업이 뜬다
+        static readonly Vector3 StartPos = new Vector3(-9.5f, 0.05f, 0f);
+
+        // Build 한 번 동안 만든 오브젝트를 모아 GameManager에 연결
+        static InteractZoneView exitZone, bedZone;
+        static Transform startPoint;
+        static MapNumberSignView mapSign;
+        static readonly List<AnomalyTargetView> anomalyTargets = new List<AnomalyTargetView>();
+        static Font uiFont;
+
+        static Material wallFadeMat, atlasMat, wallMat, roomFloorMat, corridorFloorMat, corridorFloorMatB, groutMat, forwardMat, backMat;
         static float kayKitFix = 1f; // FBX 임포트 단위 보정
 
         [MenuItem("Anomaly/Build Level Layout")]
@@ -47,6 +72,12 @@ namespace Anomaly.Editor.Level
             CreateMaterials();
             MeasureKayKitScale();
 
+            exitZone = bedZone = null;
+            startPoint = null;
+            mapSign = null;
+            anomalyTargets.Clear();
+            uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); // OS 글꼴로 한글 표시
+
             var root = new GameObject("Level").transform;
             BuildShell(root);
             // 복도에는 소품을 두지 않는다
@@ -54,14 +85,20 @@ namespace Anomaly.Editor.Level
             BuildDining(Group("Room_102_Dining", root));
             BuildBedroom(Group("Room_103_Bedroom", root));
             BuildLights(Group("Lights", root));
+            BuildStartPointAndSign(root);
+            BuildCorridorAnomalies(root);
 
             float s = BuildPlayer(out var playerView, out var playerInputView);
             root.localScale = Vector3.one * s;
             foreach (var l in root.GetComponentsInChildren<Light>())
                 if (l.type == LightType.Point) l.range *= s;
+            // 지역 판정 높이를 월드 단위로 맞춤
+            SetFloat(exitZone, "checkHeight", 0.5f * s);
+            SetFloat(bedZone, "checkHeight", 0.5f * s);
 
-            var cameraView = BuildCamera(s);
-            BuildGameManager(playerView, playerInputView, cameraView);
+            var cameraView = BuildCamera(s, out var wallFadeView);
+            BuildUI(out var popup, out var ending);
+            BuildGameManager(playerView, playerInputView, cameraView, wallFadeView, popup, ending);
 
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.32f, 0.33f, 0.38f);
@@ -108,10 +145,86 @@ namespace Anomaly.Editor.Level
             // 앞으로 가기는 침대 상호작용으로 바뀌어서 복도 동쪽 끝은 막는다
             WallZ("Wall_CorridorEast", walls, 12 + WallT / 2, -2, 2);
 
-            // 뒤로 출구 표시(복도 서쪽 끝은 열려 있음)
+            // 출구 지역(복도 서쪽 끝, 주황색 표시). 들어오면 나가기 팝업이 한 번 뜬다
             var exits = Group("Exits", root);
-            var back = Box("Exit_Back", exits, new Vector3(-11.5f, 0.01f, 0), new Vector3(1, 0.02f, 4), backMat);
+            var back = Box("Exit_Back", exits, new Vector3(-11.4f, 0.01f, 0), new Vector3(1.2f, 0.02f, 4), backMat);
             Object.DestroyImmediate(back.GetComponent<Collider>());
+            exitZone = Zone("ExitZone", exits, new Vector3(-11.4f, 0, 0), new Vector3(1.2f, 2, 4));
+
+            // 서쪽 끝 밖으로 걸어나가 떨어지지 않게 보이지 않는 벽
+            var blocker = Box("Exit_Blocker", exits, new Vector3(-12 - WallT / 2, WallH / 2, 0), new Vector3(WallT, WallH, 4), wallMat);
+            Object.DestroyImmediate(blocker.GetComponent<MeshRenderer>());
+        }
+
+        // 트리거 박스 + InteractZoneView. 대상(플레이어)은 GameManager가 런타임에 넣는다
+        static InteractZoneView Zone(string name, Transform parent, Vector3 floorCenter, Vector3 size)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = floorCenter;
+            var col = go.AddComponent<BoxCollider>();
+            col.isTrigger = true;
+            col.center = new Vector3(0, size.y / 2, 0);
+            col.size = size;
+            var zone = go.AddComponent<InteractZoneView>();
+            SetRef(zone, "zone", col);
+            return zone;
+        }
+
+        // ---------- 시작 지점 + 맵 번호 푯말 ----------
+        static void BuildStartPointAndSign(Transform root)
+        {
+            startPoint = new GameObject("StartPoint").transform;
+            startPoint.SetParent(root, false);
+            startPoint.localPosition = StartPos;
+            startPoint.localRotation = Quaternion.Euler(0, 90, 0); // 동쪽(방 쪽)을 봄
+
+            // 시작 지점 바로 뒤 복도 북쪽 벽(Wall_Door_A) 남쪽 면에 붙인다
+            var canvasGo = new GameObject("Sign_MapNumber", typeof(RectTransform), typeof(Canvas));
+            canvasGo.transform.SetParent(root, false);
+            canvasGo.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+            var rt = (RectTransform)canvasGo.transform;
+            rt.sizeDelta = new Vector2(160, 110);
+            rt.localScale = Vector3.one * 0.01f;
+            rt.localPosition = new Vector3(-10.5f, 2.6f, 2 - WallT / 2 - 0.01f);
+
+            var board = new GameObject("Board", typeof(RectTransform), typeof(Image));
+            board.transform.SetParent(canvasGo.transform, false);
+            Stretch((RectTransform)board.transform);
+            board.GetComponent<Image>().color = new Color(0.18f, 0.2f, 0.24f);
+
+            var label = CreateText(canvasGo.transform, "Number", "0", 80, Vector2.zero, rt.sizeDelta);
+            label.color = new Color(0.95f, 0.93f, 0.85f);
+
+            mapSign = canvasGo.AddComponent<MapNumberSignView>();
+            SetRef(mapSign, "label", label);
+        }
+
+        // ---------- 복도 이상현상(쉬움 2개) ----------
+        static void BuildCorridorAnomalies(Transform root)
+        {
+            var tiles = root.Find("Floors/Floor_Corridor_Tiles");
+            if (tiles != null)
+            {
+                var data = GetOrCreateAnomaly("C01_CorridorTileColor", "C01", AnomalyDifficulty.Easy, AnomalyRoom.Corridor, AnomalyKind.ColorChange, "복도 바닥 타일 색 변경");
+                var view = tiles.gameObject.AddComponent<ColorAnomalyView>();
+                SetString(view, "anomalyId", data.Id);
+                SetRefArray(view, "renderers", tiles.GetComponentsInChildren<Renderer>());
+                SetColor(view, "color", new Color(0.72f, 0.38f, 0.34f));
+                anomalyTargets.Add(view);
+            }
+
+            var lightA = root.Find("Lights/Light_Corridor_A");
+            var lightB = root.Find("Lights/Light_Corridor_B");
+            if (lightA != null && lightB != null)
+            {
+                var data = GetOrCreateAnomaly("C02_CorridorLightColor", "C02", AnomalyDifficulty.Easy, AnomalyRoom.Corridor, AnomalyKind.ColorChange, "복도 조명 색 변경");
+                var view = lightA.parent.gameObject.AddComponent<LightColorAnomalyView>();
+                SetString(view, "anomalyId", data.Id);
+                SetRefArray(view, "lights", new Object[] { lightA.GetComponent<Light>(), lightB.GetComponent<Light>() });
+                SetColor(view, "color", new Color(1f, 0.3f, 0.25f));
+                anomalyTargets.Add(view);
+            }
         }
 
         // ---------- 101 거실 (x -12..-4) ----------
@@ -159,6 +272,8 @@ namespace Anomaly.Editor.Level
             col.isTrigger = true;
             col.center = new Vector3(0, 1, 0);
             col.size = new Vector3(3, 2, 1.5f);
+            bedZone = goal.AddComponent<InteractZoneView>();
+            SetRef(bedZone, "zone", col);
             Prop("table_small", p, 11.3f, 0, 9.35f, 0);
             Prop("lamp_table", p, 11.3f, 1.0f, 9.35f, 0);
             Prop("table_small", p, 6.6f, 0, 9.35f, 0);
@@ -200,7 +315,7 @@ namespace Anomaly.Editor.Level
         }
 
         // ---------- 카메라(플레이어를 따라가는 탑뷰) ----------
-        static TopDownCameraView BuildCamera(float s)
+        static TopDownCameraView BuildCamera(float s, out WallFadeView wallFadeView)
         {
             var cam = new GameObject("Main Camera").AddComponent<Camera>();
             cam.tag = "MainCamera";
@@ -213,7 +328,105 @@ namespace Anomaly.Editor.Level
             var view = cam.gameObject.AddComponent<TopDownCameraView>();
             SetVector3(view, "offset", new Vector3(0f, 10f, -6.5f) * s);
             SetFloat(view, "lookHeight", 0.5f * s);
+
+            // 카메라와 플레이어 사이 벽 투명화
+            wallFadeView = cam.gameObject.AddComponent<WallFadeView>();
+            SetFloat(wallFadeView, "targetHeight", 0.8f * s);
+            SetFloat(wallFadeView, "radius", 0.25f * s);
             return view;
+        }
+
+        // ---------- 화면 UI: 확인 팝업, 엔딩 ----------
+        static void BuildUI(out ConfirmPopupView popup, out EndingView ending)
+        {
+            var esGo = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
+            var eventSystem = esGo.GetComponent<EventSystem>();
+
+            var canvasGo = new GameObject("UI", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            canvasGo.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
+            var scaler = canvasGo.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920, 1080);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            // 확인 팝업: 루트는 켜 두고(Awake 실행용) 안쪽 Panel만 켜고 끈다
+            var popupRoot = new GameObject("ConfirmPopup", typeof(RectTransform));
+            popupRoot.transform.SetParent(canvasGo.transform, false);
+            Stretch((RectTransform)popupRoot.transform);
+            var panel = new GameObject("Panel", typeof(RectTransform), typeof(Image));
+            panel.transform.SetParent(popupRoot.transform, false);
+            var panelRt = (RectTransform)panel.transform;
+            panelRt.sizeDelta = new Vector2(640, 280);
+            panel.GetComponent<Image>().color = new Color(0.1f, 0.11f, 0.14f, 0.92f);
+            var message = CreateText(panel.transform, "Message", "", 44, new Vector2(0, 50), new Vector2(600, 100));
+            var confirm = CreateButton(panel.transform, "ConfirmButton", new Vector2(-150, -70), out var confirmLabel);
+            var cancel = CreateButton(panel.transform, "CancelButton", new Vector2(150, -70), out var cancelLabel);
+
+            popup = popupRoot.AddComponent<ConfirmPopupView>();
+            SetRef(popup, "panel", panel);
+            SetRef(popup, "messageText", message);
+            SetRef(popup, "confirmButton", confirm);
+            SetRef(popup, "confirmLabel", confirmLabel);
+            SetRef(popup, "cancelButton", cancel);
+            SetRef(popup, "cancelLabel", cancelLabel);
+            SetRef(popup, "eventSystem", eventSystem);
+            panel.SetActive(false);
+
+            // 엔딩
+            var endingRoot = new GameObject("Ending", typeof(RectTransform));
+            endingRoot.transform.SetParent(canvasGo.transform, false);
+            Stretch((RectTransform)endingRoot.transform);
+            var endingPanel = new GameObject("Panel", typeof(RectTransform), typeof(Image));
+            endingPanel.transform.SetParent(endingRoot.transform, false);
+            Stretch((RectTransform)endingPanel.transform);
+            endingPanel.GetComponent<Image>().color = new Color(0.03f, 0.03f, 0.05f, 0.9f);
+            CreateText(endingPanel.transform, "Title", "클리어!", 96, new Vector2(0, 40), new Vector2(1200, 140));
+            CreateText(endingPanel.transform, "Sub", "무사히 아침을 맞았습니다", 40, new Vector2(0, -60), new Vector2(1200, 80));
+
+            ending = endingRoot.AddComponent<EndingView>();
+            SetRef(ending, "panel", endingPanel);
+            endingPanel.SetActive(false);
+        }
+
+        static Text CreateText(Transform parent, string name, string text, int size, Vector2 pos, Vector2 box)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Text));
+            go.transform.SetParent(parent, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = box;
+            var t = go.GetComponent<Text>();
+            t.font = uiFont;
+            t.text = text;
+            t.fontSize = size;
+            t.alignment = TextAnchor.MiddleCenter;
+            t.color = Color.white;
+            t.raycastTarget = false;
+            return t;
+        }
+
+        static Button CreateButton(Transform parent, string name, Vector2 pos, out Text label)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(parent, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = new Vector2(240, 80);
+            var img = go.GetComponent<Image>();
+            img.color = new Color(0.85f, 0.83f, 0.78f);
+            var button = go.GetComponent<Button>();
+            button.targetGraphic = img;
+            label = CreateText(go.transform, "Label", "", 34, Vector2.zero, rt.sizeDelta);
+            label.color = new Color(0.12f, 0.12f, 0.14f);
+            return button;
+        }
+
+        static void Stretch(RectTransform rt)
+        {
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
         }
 
         // ---------- 플레이어 ----------
@@ -272,9 +485,12 @@ namespace Anomaly.Editor.Level
             var moveRef = FindInputActionReference(InputActionsPath, MoveActionName);
             if (moveRef == null) Debug.LogWarning($"[LevelLayoutBuilder] {InputActionsPath}에서 {MoveActionName} 액션을 찾지 못함");
             SetRef(playerInputView, "moveAction", moveRef);
+            var interactRef = FindInputActionReference(InputActionsPath, InteractActionName);
+            if (interactRef == null) Debug.LogWarning($"[LevelLayoutBuilder] {InputActionsPath}에서 {InteractActionName} 액션을 찾지 못함");
+            SetRef(playerInputView, "interactAction", interactRef);
 
             float s = h / CharacterHeightInKayKitUnits;
-            player.transform.position = new Vector3(-9.5f, 0.05f, 0) * s;
+            player.transform.position = StartPos * s;
             player.transform.rotation = Quaternion.Euler(0, 90, 0);
             Debug.Log($"[LevelLayoutBuilder] 캐릭터 키 {h:0.###}m 기준으로 Level 스케일 {s:0.###}");
             return s;
@@ -290,13 +506,75 @@ namespace Anomaly.Editor.Level
         }
 
         // ---------- 진입점 ----------
-        static void BuildGameManager(PlayerView playerView, PlayerInputView playerInputView, TopDownCameraView cameraView)
+        static void BuildGameManager(PlayerView playerView, PlayerInputView playerInputView, TopDownCameraView cameraView,
+            WallFadeView wallFadeView, ConfirmPopupView popup, EndingView ending)
         {
             var manager = new GameObject("GameManager").AddComponent<GameManager>();
             SetRef(manager, "movementSettings", GetOrCreatePlayerSettings());
             SetRef(manager, "playerInputView", playerInputView);
             SetRef(manager, "playerView", playerView);
             SetRef(manager, "cameraView", cameraView);
+            SetRef(manager, "wallFadeView", wallFadeView);
+            SetRef(manager, "ruleSettings", GetOrCreateAsset<GameRuleSettings>(RuleSettingsPath));
+            SetRef(manager, "anomalyCatalog", GetOrCreateAsset<AnomalyCatalog>(AnomalyCatalogPath));
+            SetRefArray(manager, "anomalyTargets", anomalyTargets.ToArray());
+            SetRef(manager, "startPoint", startPoint);
+            SetRef(manager, "bedZone", bedZone);
+            SetRef(manager, "exitZone", exitZone);
+            SetRef(manager, "mapSign", mapSign);
+            SetRef(manager, "confirmPopup", popup);
+            SetRef(manager, "endingView", ending);
+        }
+
+        // ---------- 데이터 에셋 ----------
+        // 이미 있으면 그대로 쓰고(인스펙터에서 바꾼 값 유지), 없을 때만 만든다
+        static T GetOrCreateAsset<T>(string path) where T : ScriptableObject
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<T>(path);
+            if (asset != null) return asset;
+            EnsureFolder(System.IO.Path.GetDirectoryName(path).Replace('\\', '/'));
+            asset = ScriptableObject.CreateInstance<T>();
+            AssetDatabase.CreateAsset(asset, path);
+            AssetDatabase.SaveAssets();
+            return asset;
+        }
+
+        // 이상현상 에셋을 만들고 카탈로그에 없으면 추가
+        static AnomalyData GetOrCreateAnomaly(string fileName, string id, AnomalyDifficulty difficulty, AnomalyRoom room, AnomalyKind kind, string description)
+        {
+            string folder = $"{AnomalyDir}/{room}";
+            string path = $"{folder}/ANM_{fileName}.asset";
+            var data = AssetDatabase.LoadAssetAtPath<AnomalyData>(path);
+            if (data == null)
+            {
+                data = GetOrCreateAsset<AnomalyData>(path);
+                var so = new SerializedObject(data);
+                so.FindProperty("id").stringValue = id;
+                so.FindProperty("difficulty").enumValueIndex = (int)difficulty;
+                so.FindProperty("room").enumValueIndex = (int)room;
+                so.FindProperty("kind").enumValueIndex = (int)kind;
+                so.FindProperty("description").stringValue = description;
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            var catalog = GetOrCreateAsset<AnomalyCatalog>(AnomalyCatalogPath);
+            var cso = new SerializedObject(catalog);
+            var list = cso.FindProperty("anomalies");
+            for (int i = 0; i < list.arraySize; i++)
+                if (list.GetArrayElementAtIndex(i).objectReferenceValue == data) return data;
+            list.arraySize++;
+            list.GetArrayElementAtIndex(list.arraySize - 1).objectReferenceValue = data;
+            cso.ApplyModifiedPropertiesWithoutUndo();
+            AssetDatabase.SaveAssets();
+            return data;
+        }
+
+        static void EnsureFolder(string path)
+        {
+            if (AssetDatabase.IsValidFolder(path)) return;
+            int slash = path.LastIndexOf('/');
+            EnsureFolder(path.Substring(0, slash));
+            AssetDatabase.CreateFolder(path.Substring(0, slash), path.Substring(slash + 1));
         }
 
         static PlayerMovementSettings GetOrCreatePlayerSettings()
@@ -317,6 +595,25 @@ namespace Anomaly.Editor.Level
             var prop = so.FindProperty(field);
             if (prop == null) { Debug.LogWarning($"[LevelLayoutBuilder] {target.GetType().Name}.{field} 필드 없음"); return; }
             prop.objectReferenceValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static void SetRefArray(Object target, string field, Object[] values)
+        {
+            var so = new SerializedObject(target);
+            var prop = so.FindProperty(field);
+            if (prop == null || !prop.isArray) { Debug.LogWarning($"[LevelLayoutBuilder] {target.GetType().Name}.{field} 배열 필드 없음"); return; }
+            prop.arraySize = values.Length;
+            for (int i = 0; i < values.Length; i++) prop.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static void SetColor(Object target, string field, Color value)
+        {
+            var so = new SerializedObject(target);
+            var prop = so.FindProperty(field);
+            if (prop == null) { Debug.LogWarning($"[LevelLayoutBuilder] {target.GetType().Name}.{field} 필드 없음"); return; }
+            prop.colorValue = value;
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
@@ -403,10 +700,19 @@ namespace Anomaly.Editor.Level
         }
 
         static void WallX(string name, Transform p, float x0, float x1, float z, float h = WallH) =>
-            Box(name, p, new Vector3((x0 + x1) / 2, h / 2, z), new Vector3(x1 - x0, h, WallT), wallMat);
+            AddFade(Box(name, p, new Vector3((x0 + x1) / 2, h / 2, z), new Vector3(x1 - x0, h, WallT), wallMat));
 
         static void WallZ(string name, Transform p, float x, float z0, float z1) =>
-            Box(name, p, new Vector3(x, WallH / 2, (z0 + z1) / 2), new Vector3(WallT, WallH, z1 - z0), wallMat);
+            AddFade(Box(name, p, new Vector3(x, WallH / 2, (z0 + z1) / 2), new Vector3(WallT, WallH, z1 - z0), wallMat));
+
+        // 북쪽 벽은 항상 플레이어 뒤쪽이라 가릴 일이 없어서 제외
+        static void AddFade(GameObject wall)
+        {
+            if (wall.name == "Wall_North") return;
+            var fade = wall.AddComponent<FadeableView>();
+            SetRef(fade, "targetRenderer", wall.GetComponent<MeshRenderer>());
+            SetRef(fade, "fadeMaterial", wallFadeMat);
+        }
 
         static void CreateMaterials()
         {
@@ -416,6 +722,7 @@ namespace Anomaly.Editor.Level
             var atlas = AssetDatabase.LoadAssetAtPath<Texture2D>(AtlasPath);
             atlasMat = GetMat("M_KayKit_Atlas", Color.white, atlas, 0.1f);
             wallMat = GetMat("M_Wall", new Color(0.86f, 0.83f, 0.76f), null, 0.05f);
+            wallFadeMat = GetFadeMat("M_Wall_Fade", new Color(0.86f, 0.83f, 0.76f));
             roomFloorMat = GetMat("M_Floor_Room", new Color(0.62f, 0.5f, 0.38f), null, 0.15f);
             corridorFloorMat = GetMat("M_Floor_Corridor", new Color(0.55f, 0.58f, 0.56f), null, 0.15f);
             corridorFloorMatB = GetMat("M_Floor_Corridor_B", new Color(0.66f, 0.68f, 0.65f), null, 0.15f);
@@ -431,13 +738,34 @@ namespace Anomaly.Editor.Level
             var m = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (m == null)
             {
-                var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+                var shader = Shader.Find("Universal Render Pipeline/Lit"); // CLAUDE.md 7: URP 셰이더만
+                if (shader == null) { Debug.LogError("[LevelLayoutBuilder] URP Lit 셰이더를 찾지 못함"); return null; }
                 m = new Material(shader);
                 AssetDatabase.CreateAsset(m, path);
             }
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
             if (tex != null && m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", tex);
             if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smooth);
+            EditorUtility.SetDirty(m);
+            return m;
+        }
+
+        // URP Lit을 Transparent(Alpha 블렌드)로 설정한 머티리얼
+        static Material GetFadeMat(string name, Color color)
+        {
+            var m = GetMat(name, color, null, 0.05f);
+            if (m == null) return null;
+            m.SetFloat("_Surface", 1f);
+            m.SetFloat("_Blend", 0f);
+            m.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            m.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+            m.SetFloat("_SrcBlendAlpha", (float)BlendMode.One);
+            m.SetFloat("_DstBlendAlpha", (float)BlendMode.OneMinusSrcAlpha);
+            m.SetFloat("_ZWrite", 0f);
+            m.SetFloat("_AlphaClip", 0f);
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            m.SetOverrideTag("RenderType", "Transparent");
+            m.renderQueue = (int)RenderQueue.Transparent;
             EditorUtility.SetDirty(m);
             return m;
         }

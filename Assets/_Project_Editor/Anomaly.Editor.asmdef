@@ -5,7 +5,8 @@
         "Anomaly.Model",
         "Anomaly.View",
         "Anomaly.Presenter",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "UnityEngine.UI"
     ],
     "includePlatforms": [
         "Editor"

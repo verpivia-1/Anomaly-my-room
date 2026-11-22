@@ -8,10 +8,13 @@ namespace Anomaly.View.Player
     public sealed class PlayerInputView : MonoBehaviour
     {
         [SerializeField] private InputActionReference moveAction;
+        [Tooltip("Player/Interact. 침대 앞에서 누르면 잠들기 팝업")]
+        [SerializeField] private InputActionReference interactAction;
 
         public Vector2 MoveInput { get; private set; }
 
         public event Action<Vector2> MoveInputChanged;
+        public event Action InteractPressed;
         
         private void OnEnable()
         {
@@ -29,10 +32,25 @@ namespace Anomaly.View.Player
             action.performed += OnMove;
             action.canceled += OnMove;
             action.Enable();
+
+            // Interact 액션에는 Hold가 걸려 있어서 performed는 길게 눌러야 옴. 누르는 순간(started)을 씀
+            if (interactAction == null || interactAction.action == null)
+            {
+                Debug.LogError($"[{nameof(PlayerInputView)}] interactAction이 연결되지 않았습니다.", this);
+                return;
+            }
+            interactAction.action.started += OnInteract;
+            interactAction.action.Enable();
         }
 
         private void OnDisable()
         {
+            if (interactAction != null && interactAction.action != null)
+            {
+                interactAction.action.started -= OnInteract;
+                interactAction.action.Disable();
+            }
+
             if (moveAction == null || moveAction.action == null) return;
             var action = moveAction.action;
             action.performed -= OnMove;
@@ -44,6 +62,11 @@ namespace Anomaly.View.Player
         private void OnMove(InputAction.CallbackContext context)
         {
             SetMoveInput(context.ReadValue<Vector2>());
+        }
+
+        private void OnInteract(InputAction.CallbackContext context)
+        {
+            InteractPressed?.Invoke();
         }
 
         private void SetMoveInput(Vector2 value)
