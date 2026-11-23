@@ -24,6 +24,8 @@ namespace Anomaly.View.UI
 
         [Header("단순 암전")]
         [SerializeField] private Color plainBackground = Color.black;
+        [Tooltip("단순 암전은 보여줄 이미지가 없어 검은 화면 유지 시간을 짧게")]
+        [SerializeField, Min(0f)] private float plainHoldDuration = 0.1f;
 
         [Header("시간(초)")]
         [SerializeField, Min(0f)] private float fadeOutDuration = 0.35f;
@@ -45,7 +47,7 @@ namespace Anomaly.View.UI
         public void FadeOut(ScreenFadeKind kind, Action onCovered)
         {
             ApplyStyle(kind);
-            Run(1f, fadeOutDuration, holdDuration, onCovered);
+            Run(1f, fadeOutDuration, kind == ScreenFadeKind.Plain ? plainHoldDuration : holdDuration, onCovered);
         }
 
         // 애니메이션 없이 즉시 덮인 상태로(씬 시작 직후 FadeIn으로 밝히는 용도)

@@ -2,7 +2,9 @@ using Anomaly.Model.Anomalies;
 using Anomaly.Model.Loop;
 using Anomaly.Model.Player;
 using Anomaly.Presenter.Anomalies;
+using Anomaly.Presenter.Inspect;
 using Anomaly.Presenter.Loop;
+using Anomaly.Presenter.Menu;
 using Anomaly.Presenter.Player;
 using Anomaly.View.Anomalies;
 using Anomaly.View.Cameras;
@@ -32,6 +34,7 @@ namespace Anomaly.Presenter.Manager
         [SerializeField] private InteractZoneView bedZone;
         [SerializeField] private InteractZoneView exitZone;
         [SerializeField] private MapNumberSignView mapSign;
+        [SerializeField] private InspectableView[] inspectables = new InspectableView[0];
 
         [Header("UI")]
         [SerializeField] private ConfirmPopupView confirmPopup;
@@ -39,12 +42,20 @@ namespace Anomaly.Presenter.Manager
         [SerializeField] private ScreenFadeView screenFade;
         [SerializeField] private InteractPromptView interactPrompt;
         [SerializeField] private MapFeedbackView mapFeedback;
+        [SerializeField] private InspectPanelView inspectPanel;
+        [SerializeField] private PauseMenuView pauseMenu;
+
+        [Header("씬")]
+        [Tooltip("일시정지 메뉴·엔딩에서 돌아갈 로비 씬 이름")]
+        [SerializeField] private string lobbySceneName = "Lobby";
 
         private PlayerModel playerModel;
         private LoopModel loopModel;
         private PlayerMovementPresenter playerMovement;
         private LoopPresenter loopPresenter;
         private DecisionPresenter decisionPresenter;
+        private MenuPresenter menuPresenter;
+        private InteractionPresenter interactionPresenter;
 
         public PlayerModel PlayerModel => playerModel;
         public LoopModel LoopModel => loopModel;
@@ -71,8 +82,11 @@ namespace Anomaly.Presenter.Manager
             playerMovement = new PlayerMovementPresenter(playerModel, movementSettings, playerInputView, playerView);
             loopPresenter = new LoopPresenter(loopModel, ruleSettings, pool, random, anomalies,
                 playerView, cameraView, startPoint, mapSign, endingView, screenFade, mapFeedback);
-            decisionPresenter = new DecisionPresenter(loopModel, playerModel, loopPresenter,
-                playerInputView, bedZone, exitZone, confirmPopup, interactPrompt);
+            decisionPresenter = new DecisionPresenter(loopModel, playerModel, loopPresenter, exitZone, confirmPopup);
+            var inspectPresenter = new InspectPresenter(loopModel, cameraView, playerView, playerInputView, inspectPanel);
+            menuPresenter = new MenuPresenter(loopModel, pauseMenu, endingView, screenFade, lobbySceneName);
+            interactionPresenter = new InteractionPresenter(loopModel, playerInputView, playerView, bedZone, inspectables,
+                interactPrompt, decisionPresenter, inspectPresenter, menuPresenter);
 
             bedZone.SetTarget(playerView.transform);
             exitZone.SetTarget(playerView.transform);
@@ -89,6 +103,7 @@ namespace Anomaly.Presenter.Manager
         private void Update()
         {
             playerMovement?.Tick(Time.deltaTime);
+            interactionPresenter?.Tick();
         }
 
         private void OnDestroy()
@@ -97,6 +112,10 @@ namespace Anomaly.Presenter.Manager
             playerMovement = null;
             decisionPresenter?.Dispose();
             decisionPresenter = null;
+            interactionPresenter?.Dispose();
+            interactionPresenter = null;
+            menuPresenter?.Dispose();
+            menuPresenter = null;
         }
     }
 }

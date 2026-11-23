@@ -25,8 +25,10 @@ namespace Anomaly.Presenter.Loop
         private readonly ScreenFadeView fade;
         private readonly MapFeedbackView feedback;
 
-        private const string CorrectMessageFormat = "{0}번 맵";
-        private const string WrongMessage = "처음으로 돌아왔다";
+        // 맵 전환 직후 피드백 문구(스토리 연출)
+        private const string CorrectSleepMessage = "역시 내 집이 맞았어";      // 잠들기로 맞힘
+        private const string CorrectLeaveMessage = "역시 내 집이 아니였어";    // 나가기로 맞힘
+        private const string WrongMessage = "분명 맞는거 같았는데...";        // 틀려서 0번 맵으로
 
         public LoopPresenter(LoopModel loop, GameRuleSettings rules, AnomalyPool pool, Random random,
             AnomalyPresenter anomalies, PlayerView playerView, TopDownCameraView cameraView,
@@ -70,12 +72,12 @@ namespace Anomaly.Presenter.Loop
             // 화면을 다 덮은 뒤에 맵을 바꾼다(이상현상이 바뀌는 순간과 순간이동이 안 보이게)
             // 잠들기와 나가기는 다른 페이드(배경색·이미지)를 씀
             var kind = decision == Decision.Sleep ? ScreenFadeKind.Sleep : ScreenFadeKind.Leave;
-            if (fade != null) fade.FadeOut(kind, () => ApplyTransition(correct));
-            else ApplyTransition(correct);
+            if (fade != null) fade.FadeOut(kind, () => ApplyTransition(decision, correct));
+            else ApplyTransition(decision, correct);
         }
 
         // 2) ~ 7). 화면이 검게 덮인 동안 실행
-        private void ApplyTransition(bool correct)
+        private void ApplyTransition(Decision decision, bool correct)
         {
             // 2) 현재 이상현상 원래대로 되돌리기
             anomalies.Revert(loop.CurrentAnomaly);
@@ -98,18 +100,18 @@ namespace Anomaly.Presenter.Loop
             // 6) 플레이어를 시작 위치로
             MovePlayerToStart();
             // 7) 페이드 인이 끝나면 판정·이동 잠금 해제 + 정답/오답 피드백
-            int mapNumber = loop.MapNumber;
             FadeIn(() =>
             {
                 loop.SetPhase(LoopPhase.Playing);
-                ShowFeedback(correct, mapNumber);
+                ShowFeedback(decision, correct);
             });
         }
 
-        private void ShowFeedback(bool correct, int mapNumber)
+        private void ShowFeedback(Decision decision, bool correct)
         {
             if (feedback != null)
-                feedback.Show(correct, correct ? string.Format(CorrectMessageFormat, mapNumber) : WrongMessage);
+                feedback.Show(correct, !correct ? WrongMessage
+                    : decision == Decision.Sleep ? CorrectSleepMessage : CorrectLeaveMessage);
             if (mapSign != null) mapSign.Highlight(correct);
         }
 
@@ -117,6 +119,23 @@ namespace Anomaly.Presenter.Loop
         {
             if (fade != null) fade.FadeIn(onCleared);
             else onCleared?.Invoke();
+        }
+
+        // 나가지 않기: 암전 → 시작 지점으로 이동 → 밝아지면 잠금 해제(덮인 동안 이동과 판정 잠금)
+        public void ReturnToStart()
+        {
+            loop.SetPhase(LoopPhase.Transitioning);
+            if (fade == null)
+            {
+                MovePlayerToStart();
+                loop.SetPhase(LoopPhase.Playing);
+                return;
+            }
+            fade.FadeOut(ScreenFadeKind.Plain, () =>
+            {
+                MovePlayerToStart();
+                FadeIn(() => loop.SetPhase(LoopPhase.Playing));
+            });
         }
 
         public void MovePlayerToStart()

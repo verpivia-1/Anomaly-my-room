@@ -11,6 +11,8 @@ namespace Anomaly.View.Interaction
         [SerializeField] private Transform target;
         [Tooltip("대상 발밑에서 이만큼 위 지점으로 판정(월드 단위)")]
         [SerializeField, Min(0f)] private float checkHeight = 0.5f;
+        [Tooltip("거리를 잴 대상(예: 침대 모델). 비워 두면 구역 중심까지의 거리")]
+        [SerializeField] private Renderer[] targetRenderers = Array.Empty<Renderer>();
 
         public bool IsInside { get; private set; }
 
@@ -21,6 +23,22 @@ namespace Anomaly.View.Interaction
         {
             target = newTarget;
             IsInside = false;
+        }
+
+        // 대상 바닥 범위(XZ)까지의 수평 거리. 다른 상호작용 대상과 누가 더 가까운지 비교할 때 씀
+        public float DistanceToTarget(Vector3 position)
+        {
+            bool has = false;
+            var bounds = new Bounds(transform.position, Vector3.zero);
+            foreach (var r in targetRenderers)
+            {
+                if (r == null || !r.gameObject.activeInHierarchy) continue;
+                if (!has) { bounds = r.bounds; has = true; }
+                else bounds.Encapsulate(r.bounds);
+            }
+            float cx = Mathf.Clamp(position.x, bounds.min.x, bounds.max.x);
+            float cz = Mathf.Clamp(position.z, bounds.min.z, bounds.max.z);
+            return new Vector2(position.x - cx, position.z - cz).magnitude;
         }
 
         private void Update()

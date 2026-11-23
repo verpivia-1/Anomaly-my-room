@@ -16,6 +16,7 @@ namespace Anomaly.View.Player
         // 높이 차이가 없는 맵이라 진짜 중력 대신, 매 프레임 바닥 쪽으로 살짝 눌러 붙여 둔다(m/s)
         private const float GroundStickSpeed = -2f;
 
+        private Renderer[] renderers;
         private int speedHash;
         private bool hasSpeedParameter;
 
@@ -26,6 +27,14 @@ namespace Anomaly.View.Player
             if (characterController == null) characterController = GetComponent<CharacterController>();
             hasSpeedParameter = animator != null && !string.IsNullOrEmpty(speedParameter);
             if (hasSpeedParameter) speedHash = Animator.StringToHash(speedParameter);
+            renderers = GetComponentsInChildren<Renderer>(true);
+        }
+
+        // 조사 클로즈업 때 캐릭터가 물건을 가리지 않게 숨김
+        public void SetVisible(bool visible)
+        {
+            foreach (var r in renderers)
+                if (r != null) r.enabled = visible;
         }
 
         // 움직임로직. rigidbody를 적용 안해놔서 혹시모를 고저차로 인해 올라가면 내려오질않음. 대비용으로 바닥에서 일정높이 이상 뜨면 아래로 떨구게 설정

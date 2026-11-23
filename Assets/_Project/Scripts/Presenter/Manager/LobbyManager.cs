@@ -1,3 +1,4 @@
+using Anomaly.Model.Story;
 using Anomaly.Presenter.Lobby;
 using Anomaly.View.UI;
 using UnityEngine;
@@ -9,6 +10,9 @@ namespace Anomaly.Presenter.Manager
     {
         [SerializeField] private LobbyMenuView menuView;
         [SerializeField] private ScreenFadeView screenFade;
+        [Tooltip("비워 두면 인트로 없이 바로 시작")]
+        [SerializeField] private StoryView storyView;
+        [SerializeField] private StoryData introStory;
         [Tooltip("게임 시작 시 불러올 씬 이름(Build Profiles의 씬 목록에 있어야 함)")]
         [SerializeField] private string gameSceneName = "Level_Corridor";
 
@@ -22,7 +26,7 @@ namespace Anomaly.Presenter.Manager
                 enabled = false;
                 return;
             }
-            lobbyPresenter = new LobbyPresenter(menuView, screenFade, gameSceneName);
+            lobbyPresenter = new LobbyPresenter(menuView, screenFade, storyView, introStory, gameSceneName);
         }
 
         // ScreenFadeView.Awake가 끝난 뒤 시작

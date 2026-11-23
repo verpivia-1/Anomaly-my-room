@@ -13,8 +13,6 @@ MonoBehaviour:
   m_Name: AnomalyCatalog
   m_EditorClassIdentifier: Anomaly.Model::Anomaly.Model.Anomalies.AnomalyCatalog
   anomalies:
-  - {fileID: 11400000, guid: 640fcf4642ac00048b6f1a484e3a5d29, type: 2}
-  - {fileID: 11400000, guid: 9eeb36a020c73554cbf10b18f9ff5cb6, type: 2}
   - {fileID: 11400000, guid: 6bb95a05f1fe039458651699de614a73, type: 2}
   - {fileID: 11400000, guid: ade66e2ede60d9a4e96b4cd5593b6dec, type: 2}
   - {fileID: 11400000, guid: 14c40e94936266f46a64a40534d30e25, type: 2}
@@ -69,3 +67,5 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 889d765a98758e74b9349fafefd2d0c9, type: 2}
   - {fileID: 11400000, guid: 4fbdd58bd58147742b90c9a96f86597b, type: 2}
   - {fileID: 11400000, guid: dc154fae00c6cb44692064daf53ed3f7, type: 2}
+  - {fileID: 11400000, guid: 640fcf4642ac00048b6f1a484e3a5d29, type: 2}
+  - {fileID: 11400000, guid: 9eeb36a020c73554cbf10b18f9ff5cb6, type: 2}

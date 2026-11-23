@@ -68,6 +68,7 @@ namespace Anomaly.Editor.Level
         static Transform startPoint;
         static MapNumberSignView mapSign;
         static readonly List<AnomalyTargetView> anomalyTargets = new List<AnomalyTargetView>();
+        static readonly List<InspectableView> inspectables = new List<InspectableView>();
         static Font uiFont;
 
         static Material wallFadeMat, atlasMat, wallMat, roomFloorMat, corridorFloorMat, corridorFloorMatB, groutMat, forwardMat, backMat;
@@ -89,6 +90,8 @@ namespace Anomaly.Editor.Level
             colorCounts.Clear();
             swapCounts.Clear();
             colorIndex = 0;
+            inspectables.Clear();
+            ClearCatalog(); // 이번 빌드에서 실제로 배치된 이상현상만 다시 채움(빠진 가구의 이상현상이 풀에 남지 않게)
             uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); // OS 글꼴로 한글 표시
 
             var root = new GameObject("Level").transform;
@@ -107,11 +110,12 @@ namespace Anomaly.Editor.Level
                 if (l.type == LightType.Point) l.range *= s;
             // 지역 판정 높이를 월드 단위로 맞춤
             SetFloat(exitZone, "checkHeight", 0.5f * s);
+            foreach (var item in inspectables) SetFloat(item, "reach", InspectReach * s);
             SetFloat(bedZone, "checkHeight", 0.5f * s);
 
             var cameraView = BuildCamera(s, out var wallFadeView);
-            BuildUI(out var popup, out var ending, out var screenFade, out var prompt, out var feedback);
-            BuildGameManager(playerView, playerInputView, cameraView, wallFadeView, popup, ending, screenFade, prompt, feedback);
+            BuildUI(out var popup, out var ending, out var screenFade, out var prompt, out var feedback, out var inspectPanel, out var pauseMenu);
+            BuildGameManager(playerView, playerInputView, cameraView, wallFadeView, popup, ending, screenFade, prompt, feedback, inspectPanel, pauseMenu);
 
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.32f, 0.33f, 0.38f);
@@ -247,12 +251,13 @@ namespace Anomaly.Editor.Level
         static void BuildLiving(Transform p)
         {
             Anom(Prop("rug_rectangle_A", p, -8, 0, 6.3f, 0), Living, "rug_rectangle_stripes_A");
-            Anom(Prop("couch_pillows", p, -8, 0, 9.1f, 0), Living, "couch");
+            // KayKit 모델은 회전 0일 때 +z(북쪽)를 봄. 소파는 방 안(테이블)을 보게 돌림
+            Anom(Prop("couch_pillows", p, -8, 0, 9.1f, 180), Living, "couch");
             Anom(Prop("table_low", p, -8, 0, 6.6f, 0), Living);
-            Anom(Prop("armchair", p, -11, 0, 6.0f, -90), Living, "armchair_pillows");
+            Anom(Prop("armchair", p, -11, 0, 6.0f, 90), Living, "armchair_pillows");
             Anom(Prop("cabinet_medium_decorated", p, -4.6f, 0, 6.3f, -90), Living, "cabinet_medium");
             Anom(Prop("lamp_standing", p, -11.2f, 0, 9.2f, 0), Living);
-            Anom(Prop("pictureframe_large_B", p, -8, 2.6f, 10, 180), Living);
+            SetInspectPoint(Anom(Prop("pictureframe_large_B", p, -8, 2.6f, 10, 180), Living), p, -8f, 7.9f); // 소파 앞에서 조사
             Anom(Prop("shelf_B_large_decorated", p, -12, 2.2f, 4.0f, 90), Living, "shelf_B_large");
             Anom(Prop("cactus_medium_A", p, -4.8f, 0, 9.3f, 0), Living, "cactus_medium_B");
         }
@@ -266,7 +271,9 @@ namespace Anomaly.Editor.Level
             Anom(Prop("chair_A", p, -0.75f, 0, 4.9f, 0), Dining, "chair_A_wood");
             Anom(Prop("chair_A", p, 0.75f, 0, 4.9f, 0), Dining, "chair_B");
             Anom(Prop("chair_A", p, -0.75f, 0, 7.9f, 180), Dining, "chair_B");
-            Anom(Prop("chair_A", p, 0.75f, 0, 7.9f, 180), Dining, "chair_A_wood");
+            // 네 번째 의자는 식탁 서쪽 끝(머리 자리)에서 동쪽을 봄.
+            // 북쪽에 두면 식탁과 북쪽 벽 사이가 막혀 벽 액자를 조사할 수 없음. ID(DC06, DS05)는 그대로
+            Anom(Prop("chair_A", p, -1.7f, 0, 6.4f, 90), Dining, "chair_A_wood");
             Anom(Prop("cabinet_medium_decorated", p, -2.2f, 0, 9.45f, 180), Dining, "cabinet_medium");
             Anom(Prop("cabinet_medium", p, 2.2f, 0, 9.45f, 180), Dining, "cabinet_medium_decorated");
             Anom(Prop("book_set", p, 1.7f, 1.25f, 9.45f, 180), Dining);
@@ -280,17 +287,25 @@ namespace Anomaly.Editor.Level
         static void BuildBedroom(Transform p)
         {
             Anom(Prop("rug_oval_B", p, 8, 0, 5.2f, 0), Bedroom, "rug_oval_A");
-            Prop("bed_double_A", p, 9, 0, 8.4f, 180); // 도착점이라 이상현상에서 제외
-            // 도착점: 침대 상호작용 위치(빈 오브젝트). 상호작용 스크립트는 나중에 여기에 붙인다
+            var bed = Prop("bed_double_A", p, 9, 0, 8.4f, 180); // 도착점이라 이상현상에서 제외
+            // 잠들기 구역: 침대 둘레 전체(발치·양옆). 침대 바닥 범위에 조사 거리만큼 여유를 더함
+            var bedRenderers = bed != null ? bed.GetComponentsInChildren<Renderer>() : new Renderer[0];
+            var bedBounds = new Bounds(new Vector3(9, 0, 8.4f), new Vector3(2, 1, 2.5f));
+            if (bedRenderers.Length > 0)
+            {
+                bedBounds = bedRenderers[0].bounds;
+                foreach (var r in bedRenderers) bedBounds.Encapsulate(r.bounds);
+            }
             var goal = new GameObject("Goal_BedInteract");
             goal.transform.SetParent(p, false);
-            goal.transform.localPosition = new Vector3(9, 0, 6.5f); // 침대 발치 앞
+            goal.transform.localPosition = new Vector3(bedBounds.center.x, 0, bedBounds.center.z); // 레벨 루트 스케일 전이라 로컬 = 월드
             var col = goal.AddComponent<BoxCollider>();
             col.isTrigger = true;
             col.center = new Vector3(0, 1, 0);
-            col.size = new Vector3(3, 2, 1.5f);
+            col.size = new Vector3(bedBounds.size.x + InspectReach * 2, 2, bedBounds.size.z + InspectReach * 2);
             bedZone = goal.AddComponent<InteractZoneView>();
             SetRef(bedZone, "zone", col);
+            SetRefArray(bedZone, "targetRenderers", bedRenderers);
             Anom(Prop("table_small", p, 11.3f, 0, 9.35f, 0), Bedroom);
             Anom(Prop("lamp_table", p, 11.3f, 1.0f, 9.35f, 0), Bedroom);
             Anom(Prop("table_small", p, 6.6f, 0, 9.35f, 0), Bedroom);
@@ -298,7 +313,7 @@ namespace Anomaly.Editor.Level
             Anom(Prop("cabinet_small_decorated", p, 11.35f, 0, 4.0f, -90), Bedroom, "cabinet_small");
             Anom(Prop("chair_C", p, 5.2f, 0, 4.2f, 90), Bedroom, "chair_B");
             Anom(Prop("shelf_B_small", p, 4.1f, 2.0f, 5.0f, 90), Bedroom, "shelf_B_small_decorated");
-            Anom(Prop("pictureframe_small_A", p, 9, 2.6f, 10, 180), Bedroom, "pictureframe_small_C");
+            SetInspectPoint(Anom(Prop("pictureframe_small_A", p, 9, 2.6f, 10, 180), Bedroom, "pictureframe_small_C"), p, 7.4f, 7.8f); // 침대 왼쪽에서 조사
             Anom(Prop("cactus_small_B", p, 4.7f, 0, 2.7f, 0), Bedroom, "cactus_small_A");
         }
 
@@ -314,10 +329,30 @@ namespace Anomaly.Editor.Level
         static readonly Dictionary<AnomalyRoom, int> swapCounts = new Dictionary<AnomalyRoom, int>();
         static int colorIndex;
 
-        static void Anom(GameObject prop, AnomalyRoom room, string swapTo = null)
+        // 조사 화면에 보이는 이름(모델 교체돼도 같은 이름 → 이름으로 이상현상이 드러나지 않음)
+        static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string>
         {
-            if (prop == null) return;
+            { "rug_rectangle_A", "러그" }, { "rug_oval_A", "러그" }, { "rug_oval_B", "러그" },
+            { "couch_pillows", "소파" }, { "armchair", "1인용 소파" }, { "table_low", "낮은 테이블" },
+            { "cabinet_medium_decorated", "장식장" }, { "cabinet_medium", "수납장" }, { "cabinet_small_decorated", "작은 수납장" },
+            { "lamp_standing", "스탠드" }, { "lamp_table", "램프" },
+            { "pictureframe_large_B", "액자" }, { "pictureframe_medium", "액자" }, { "pictureframe_small_A", "액자" },
+            { "pictureframe_standing_A", "사진 액자" },
+            { "shelf_B_large_decorated", "벽 선반" }, { "shelf_B_small_decorated", "벽 선반" }, { "shelf_B_small", "벽 선반" },
+            { "cactus_medium_A", "선인장 화분" }, { "cactus_small_A", "선인장 화분" }, { "cactus_small_B", "선인장 화분" },
+            { "table_medium_long", "식탁" }, { "table_small", "협탁" }, { "chair_A", "의자" }, { "chair_C", "의자" },
+            { "book_set", "책" },
+        };
+        const float InspectReach = 1.2f; // KayKit 단위. 레벨 스케일에 맞춰 월드 단위로 바꿔 넣음
+
+        static InspectableView Anom(GameObject prop, AnomalyRoom room, string swapTo = null)
+        {
+            if (prop == null) return null;
             string model = prop.name;
+            var inspectable = prop.AddComponent<InspectableView>();
+            SetString(inspectable, "displayName", DisplayNames.TryGetValue(model, out var dn) ? dn : model);
+            SetRefArray(inspectable, "renderers", prop.GetComponentsInChildren<Renderer>(true));
+            inspectables.Add(inspectable);
             string code = room == AnomalyRoom.Living101 ? "L" : room == AnomalyRoom.Dining102 ? "D" : "B";
 
             int c = NextCount(colorCounts, room);
@@ -329,12 +364,16 @@ namespace Anomaly.Editor.Level
             SetColor(colorView, "color", AnomalyColors[colorIndex++ % AnomalyColors.Length]);
             anomalyTargets.Add(colorView);
 
-            if (string.IsNullOrEmpty(swapTo)) return;
+            if (string.IsNullOrEmpty(swapTo)) return inspectable;
 
             // 교체 모델을 같은 자리에 꺼진 채로 만들어 둔다
             var t = prop.transform;
             var replacement = Prop(swapTo, t.parent, t.localPosition.x, t.localPosition.y, t.localPosition.z, t.localEulerAngles.y);
-            if (replacement == null) return;
+            if (replacement == null) return inspectable;
+            // 조사 범위 계산에 교체 모델도 포함(켜져 있는 쪽만 씀)
+            var both = new List<Object>(prop.GetComponentsInChildren<Renderer>(true));
+            both.AddRange(replacement.GetComponentsInChildren<Renderer>(true));
+            SetRefArray(inspectable, "renderers", both.ToArray());
             replacement.name = $"{swapTo}__Swap_{model}";
             replacement.SetActive(false);
 
@@ -346,6 +385,33 @@ namespace Anomaly.Editor.Level
             SetRef(swapView, "original", prop);
             SetRef(swapView, "replacement", replacement);
             anomalyTargets.Add(swapView);
+            return inspectable;
+        }
+
+        // 가구에 막혀 가까이 갈 수 없는 물건(소파·침대 뒤 벽 액자)은 조사 지점을 바닥 쪽에 따로 둠(KayKit 단위, 방 기준 좌표)
+        static void SetInspectPoint(InspectableView inspectable, Transform room, float x, float z)
+        {
+            if (inspectable == null) return;
+            var point = new GameObject($"InspectPoint_{inspectable.name}").transform;
+            point.SetParent(room, false);
+            point.localPosition = new Vector3(x, 0f, z);
+            SetRef(inspectable, "inspectPoint", point);
+        }
+
+        static void SkipAnomalyIds(AnomalyRoom room, bool withSwap)
+        {
+            NextCount(colorCounts, room);
+            colorIndex++; // 뒤 가구들의 색도 그대로 유지
+            if (withSwap) NextCount(swapCounts, room);
+        }
+
+        static void ClearCatalog()
+        {
+            var catalog = AssetDatabase.LoadAssetAtPath<AnomalyCatalog>(AnomalyCatalogPath);
+            if (catalog == null) return;
+            var so = new SerializedObject(catalog);
+            so.FindProperty("anomalies").arraySize = 0;
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         static int NextCount(Dictionary<AnomalyRoom, int> counts, AnomalyRoom room)
@@ -399,6 +465,7 @@ namespace Anomaly.Editor.Level
             var view = cam.gameObject.AddComponent<TopDownCameraView>();
             SetVector3(view, "offset", new Vector3(0f, 10f, -6.5f) * s);
             SetFloat(view, "lookHeight", 0.5f * s);
+            SetFloat(view, "closeupMinDistance", 0.9f * s);
 
             // 카메라와 플레이어 사이 벽 투명화
             wallFadeView = cam.gameObject.AddComponent<WallFadeView>();
@@ -409,7 +476,7 @@ namespace Anomaly.Editor.Level
 
         // ---------- 화면 UI: 확인 팝업, 엔딩 ----------
         static void BuildUI(out ConfirmPopupView popup, out EndingView ending, out ScreenFadeView screenFade,
-            out InteractPromptView prompt, out MapFeedbackView feedback)
+            out InteractPromptView prompt, out MapFeedbackView feedback, out InspectPanelView inspectPanel, out PauseMenuView pauseMenu)
         {
             var esGo = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
             var eventSystem = esGo.GetComponent<EventSystem>();
@@ -455,8 +522,13 @@ namespace Anomaly.Editor.Level
             CreateText(endingPanel.transform, "Title", "클리어!", 96, new Vector2(0, 40), new Vector2(1200, 140));
             CreateText(endingPanel.transform, "Sub", "무사히 아침을 맞았습니다", 40, new Vector2(0, -60), new Vector2(1200, 80));
 
+            var endingLobby = CreateButton(endingPanel.transform, "LobbyButton", new Vector2(0, -190), out var endingLobbyLabel);
+            endingLobbyLabel.text = "로비로";
+
             ending = endingRoot.AddComponent<EndingView>();
             SetRef(ending, "panel", endingPanel);
+            SetRef(ending, "lobbyButton", endingLobby);
+            SetRef(ending, "eventSystem", eventSystem);
             endingPanel.SetActive(false);
 
             // 상호작용 안내(화면 아래 가운데)
@@ -501,6 +573,54 @@ namespace Anomaly.Editor.Level
             SetRef(feedback, "audioSource", audio);
             SetRef(feedback, "correctClip", LoadSfx(SfxCorrectName));
             SetRef(feedback, "wrongClip", LoadSfx(SfxWrongName));
+
+            // 조사 패널(화면 아래 가운데): 이름 / 설명 / 닫기 안내
+            var inspectRoot = new GameObject("InspectPanel", typeof(RectTransform));
+            inspectRoot.transform.SetParent(canvasGo.transform, false);
+            Stretch((RectTransform)inspectRoot.transform);
+            var inspectBox = new GameObject("Panel", typeof(RectTransform), typeof(Image));
+            inspectBox.transform.SetParent(inspectRoot.transform, false);
+            var ibRt = (RectTransform)inspectBox.transform;
+            ibRt.anchorMin = ibRt.anchorMax = new Vector2(0.5f, 0f);
+            ibRt.pivot = new Vector2(0.5f, 0f);
+            ibRt.anchoredPosition = new Vector2(0, 60);
+            ibRt.sizeDelta = new Vector2(900, 220);
+            var ibImg = inspectBox.GetComponent<Image>();
+            ibImg.color = new Color(0.08f, 0.09f, 0.12f, 0.85f);
+            ibImg.raycastTarget = false;
+            var inspectTitle = CreateText(inspectBox.transform, "Title", "", 46, new Vector2(0, 60), new Vector2(860, 70));
+            var inspectDesc = CreateText(inspectBox.transform, "Description", "", 30, new Vector2(0, -5), new Vector2(860, 70));
+            var inspectHint = CreateText(inspectBox.transform, "Hint", "", 24, new Vector2(0, -75), new Vector2(860, 40));
+            inspectHint.color = new Color(1f, 1f, 1f, 0.6f);
+            inspectPanel = inspectRoot.AddComponent<InspectPanelView>();
+            SetRef(inspectPanel, "panel", inspectBox);
+            SetRef(inspectPanel, "titleText", inspectTitle);
+            SetRef(inspectPanel, "descriptionText", inspectDesc);
+            SetRef(inspectPanel, "hintText", inspectHint);
+            inspectBox.SetActive(false);
+
+            // 일시정지 메뉴(화면 가운데)
+            var pauseRoot = new GameObject("PauseMenu", typeof(RectTransform));
+            pauseRoot.transform.SetParent(canvasGo.transform, false);
+            Stretch((RectTransform)pauseRoot.transform);
+            var pausePanel = new GameObject("Panel", typeof(RectTransform), typeof(Image));
+            pausePanel.transform.SetParent(pauseRoot.transform, false);
+            Stretch((RectTransform)pausePanel.transform);
+            pausePanel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.7f);
+            CreateText(pausePanel.transform, "Title", "일시정지", 72, new Vector2(0, 220), new Vector2(800, 110));
+            var resumeButton = CreateButton(pausePanel.transform, "ResumeButton", new Vector2(0, 60), out var resumeLabel);
+            resumeLabel.text = "계속하기";
+            var pauseLobby = CreateButton(pausePanel.transform, "LobbyButton", new Vector2(0, -50), out var pauseLobbyLabel);
+            pauseLobbyLabel.text = "로비로";
+            var pauseQuit = CreateButton(pausePanel.transform, "QuitButton", new Vector2(0, -160), out var pauseQuitLabel);
+            pauseQuitLabel.text = "종료";
+            pauseMenu = pauseRoot.AddComponent<PauseMenuView>();
+            SetRef(pauseMenu, "panel", pausePanel);
+            SetRef(pauseMenu, "resumeButton", resumeButton);
+            SetRef(pauseMenu, "lobbyButton", pauseLobby);
+            SetRef(pauseMenu, "quitButton", pauseQuit);
+            SetRef(pauseMenu, "eventSystem", eventSystem);
+            pausePanel.SetActive(false);
 
             // 맵 전환 페이드. 마지막 자식이라 팝업·엔딩보다 위에 그려짐. 배경색 판 + 그 위 이미지
             var fadeGo = new GameObject("ScreenFade", typeof(RectTransform), typeof(Image), typeof(CanvasGroup));
@@ -676,6 +796,9 @@ namespace Anomaly.Editor.Level
             var interactRef = FindInputActionReference(InputActionsPath, InteractActionName);
             if (interactRef == null) Debug.LogWarning($"[LevelLayoutBuilder] {InputActionsPath}에서 {InteractActionName} 액션을 찾지 못함");
             SetRef(playerInputView, "interactAction", interactRef);
+            var cancelRef = FindInputActionReference(InputActionsPath, "UI/Cancel");
+            if (cancelRef == null) Debug.LogWarning($"[LevelLayoutBuilder] {InputActionsPath}에서 UI/Cancel 액션을 찾지 못함");
+            SetRef(playerInputView, "cancelAction", cancelRef);
 
             float s = h / CharacterHeightInKayKitUnits;
             player.transform.position = StartPos * s;
@@ -696,7 +819,7 @@ namespace Anomaly.Editor.Level
         // ---------- 진입점 ----------
         static void BuildGameManager(PlayerView playerView, PlayerInputView playerInputView, TopDownCameraView cameraView,
             WallFadeView wallFadeView, ConfirmPopupView popup, EndingView ending, ScreenFadeView screenFade,
-            InteractPromptView prompt, MapFeedbackView feedback)
+            InteractPromptView prompt, MapFeedbackView feedback, InspectPanelView inspectPanel, PauseMenuView pauseMenu)
         {
             var manager = new GameObject("GameManager").AddComponent<GameManager>();
             SetRef(manager, "movementSettings", GetOrCreatePlayerSettings());
@@ -716,6 +839,10 @@ namespace Anomaly.Editor.Level
             SetRef(manager, "screenFade", screenFade);
             SetRef(manager, "interactPrompt", prompt);
             SetRef(manager, "mapFeedback", feedback);
+            SetRef(manager, "inspectPanel", inspectPanel);
+            SetRef(manager, "pauseMenu", pauseMenu);
+            SetRefArray(manager, "inspectables", inspectables.ToArray());
+            SetString(manager, "lobbySceneName", "Lobby");
         }
 
         // ---------- 데이터 에셋 ----------

@@ -16,6 +16,10 @@ namespace Anomaly.View.Player
         public event Action<Vector2> MoveInputChanged;
         public event Action InteractPressed;
 
+        [Tooltip("UI/Cancel(Esc, 게임패드 B). 팝업 취소·조사 닫기·일시정지")]
+        [SerializeField] private InputActionReference cancelAction;
+        public event Action CancelPressed;
+
         // 안내 문구에 쓸 상호작용 키 이름(첫 번째 바인딩, Hold 같은 표시는 뺌). 연결이 없으면 "E"
         public string InteractKeyName =>
             interactAction != null && interactAction.action != null && interactAction.action.bindings.Count > 0
@@ -47,6 +51,13 @@ namespace Anomaly.View.Player
             }
             interactAction.action.started += OnInteract;
             interactAction.action.Enable();
+
+            if (cancelAction != null && cancelAction.action != null)
+            {
+                cancelAction.action.performed += OnCancel;
+                cancelAction.action.Enable();
+            }
+            else Debug.LogError($"[{nameof(PlayerInputView)}] cancelAction이 연결되지 않았습니다.", this);
         }
 
         private void OnDisable()
@@ -56,6 +67,9 @@ namespace Anomaly.View.Player
                 interactAction.action.started -= OnInteract;
                 interactAction.action.Disable();
             }
+            // UI 입력 모듈도 같은 Cancel 액션을 쓰므로 Disable하지 않고 구독만 해제
+            if (cancelAction != null && cancelAction.action != null)
+                cancelAction.action.performed -= OnCancel;
 
             if (moveAction == null || moveAction.action == null) return;
             var action = moveAction.action;
@@ -73,6 +87,11 @@ namespace Anomaly.View.Player
         private void OnInteract(InputAction.CallbackContext context)
         {
             InteractPressed?.Invoke();
+        }
+
+        private void OnCancel(InputAction.CallbackContext context)
+        {
+            CancelPressed?.Invoke();
         }
 
         private void SetMoveInput(Vector2 value)

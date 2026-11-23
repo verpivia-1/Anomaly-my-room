@@ -5,6 +5,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Anomaly.Editor.Animations;
+using Anomaly.Model.Story;
 using Anomaly.Presenter.Manager;
 using Anomaly.View.UI;
 using UnityEditor;
@@ -26,6 +27,18 @@ namespace Anomaly.Editor.Lobby
         // 원본을 읽어 표시만 함(복사·임포트 설정 변경 없음 — CLAUDE.md 4)
         const string UclLogoPath = "Assets/Haons SD series Pack/_License/UCL3.0/License Logo/Others/png/Light_Frame.png";
         const string MatDir = "Assets/_Project/Materials/Lobby";
+        const string StoryPath = "Assets/_Project/Data/Story/IntroStory.asset";
+
+        // 인트로 스토리 초안. 에셋이 없을 때만 이 내용으로 만들고, 이후에는 에셋(IntroStory)에서 직접 고침
+        static readonly string[] DefaultStoryLines =
+        {
+            "오늘도 즐거운 퇴근",
+            "그런데 뭔가 이상하다",
+            "내 집이 내 집이 아닌거 같다",
+            "뭐 어때.",
+            "내 집이 아니면 도망치면 그만이야",
+            "내 집인거 같으면 잠들면 그만이고",
+        };
 
         // 좌표는 레벨과 같은 단위(캐릭터 키 = 1.6). 마지막에 캐릭터 키에 맞춰 루트를 스케일한다
         const float CharacterHeightInUnits = 1.6f;
@@ -48,12 +61,14 @@ namespace Anomaly.Editor.Lobby
             foreach (var l in root.GetComponentsInChildren<Light>()) l.range *= s;
 
             BuildCamera(s);
-            BuildUI(out var menu, out var fade);
+            BuildUI(out var menu, out var fade, out var storyView);
 
             var manager = new GameObject("LobbyManager").AddComponent<LobbyManager>();
             SetRef(manager, "menuView", menu);
             SetRef(manager, "screenFade", fade);
             SetString(manager, "gameSceneName", GameSceneName);
+            SetRef(manager, "storyView", storyView);
+            SetRef(manager, "introStory", GetOrCreateStory());
 
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.34f, 0.34f, 0.37f);
@@ -201,7 +216,7 @@ namespace Anomaly.Editor.Lobby
         }
 
         // ---------- UI: 제목, 메뉴, 크레딧, 암전 ----------
-        static void BuildUI(out LobbyMenuView menu, out ScreenFadeView fade)
+        static void BuildUI(out LobbyMenuView menu, out ScreenFadeView fade, out StoryView storyView)
         {
             var esGo = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
             var eventSystem = esGo.GetComponent<EventSystem>();
@@ -256,6 +271,38 @@ namespace Anomaly.Editor.Lobby
             credit.color = new Color(1, 1, 1, 0.85f);
             credit.gameObject.AddComponent<Outline>().effectColor = new Color(0, 0, 0, 0.6f);
 
+            // 인트로 스토리: 검은 화면 + 가운데 문장 + 화면 전체 클릭(다음) + 건너뛰기
+            var storyRoot = new GameObject("Story", typeof(RectTransform));
+            storyRoot.transform.SetParent(canvasGo.transform, false);
+            Stretch((RectTransform)storyRoot.transform);
+            var storyPanel = new GameObject("Panel", typeof(RectTransform), typeof(Image), typeof(Button));
+            storyPanel.transform.SetParent(storyRoot.transform, false);
+            Stretch((RectTransform)storyPanel.transform);
+            var storyBg = storyPanel.GetComponent<Image>();
+            storyBg.color = Color.black;
+            var advance = storyPanel.GetComponent<Button>();
+            advance.targetGraphic = storyBg;
+            advance.transition = Selectable.Transition.None; // 눌러도 배경색이 바뀌지 않게
+            var storyLine = CreateText(storyPanel.transform, "Line", "", 46, Vector2.zero, new Vector2(1500, 300), TextAnchor.MiddleCenter);
+            var storyHint = CreateText(storyPanel.transform, "Hint", "클릭 / Enter  다음", 24, Vector2.zero, new Vector2(600, 40), TextAnchor.MiddleCenter);
+            storyHint.color = new Color(1f, 1f, 1f, 0.5f);
+            var hintRt = storyHint.rectTransform;
+            hintRt.anchorMin = hintRt.anchorMax = new Vector2(0.5f, 0f);
+            hintRt.anchoredPosition = new Vector2(0, 70);
+            var skip = CreateButton(storyRoot.transform, "SkipButton", "건너뛰기", Vector2.zero); // panel의 형제(위에 그려짐)
+            var skipRt = (RectTransform)skip.transform;
+            skipRt.anchorMin = skipRt.anchorMax = skipRt.pivot = new Vector2(1f, 0f);
+            skipRt.anchoredPosition = new Vector2(-40, 40);
+            skipRt.sizeDelta = new Vector2(220, 64);
+            storyView = storyRoot.AddComponent<StoryView>();
+            SetRef(storyView, "panel", storyPanel);
+            SetRef(storyView, "lineText", storyLine);
+            SetRef(storyView, "advanceButton", advance);
+            SetRef(storyView, "skipButton", skip);
+            SetRef(storyView, "eventSystem", eventSystem);
+            storyPanel.SetActive(false);
+            skip.gameObject.SetActive(false);
+
             // 암전(마지막 자식 = 가장 위)
             var fadeGo = new GameObject("ScreenFade", typeof(RectTransform), typeof(Image), typeof(CanvasGroup));
             fadeGo.transform.SetParent(canvasGo.transform, false);
@@ -268,6 +315,31 @@ namespace Anomaly.Editor.Lobby
             fade = fadeGo.AddComponent<ScreenFadeView>();
             SetRef(fade, "canvasGroup", group);
             SetRef(fade, "background", bg);
+        }
+
+        static StoryData GetOrCreateStory()
+        {
+            var story = AssetDatabase.LoadAssetAtPath<StoryData>(StoryPath);
+            if (story != null) return story;
+            if (!AssetDatabase.IsValidFolder("Assets/_Project/Data")) AssetDatabase.CreateFolder("Assets/_Project", "Data");
+            if (!AssetDatabase.IsValidFolder("Assets/_Project/Data/Story")) AssetDatabase.CreateFolder("Assets/_Project/Data", "Story");
+            story = ScriptableObject.CreateInstance<StoryData>();
+            AssetDatabase.CreateAsset(story, StoryPath);
+            var so = new SerializedObject(story);
+            var lines = so.FindProperty("lines");
+            lines.arraySize = DefaultStoryLines.Length;
+            for (int i = 0; i < DefaultStoryLines.Length; i++) lines.GetArrayElementAtIndex(i).stringValue = DefaultStoryLines[i];
+            so.ApplyModifiedPropertiesWithoutUndo();
+            AssetDatabase.SaveAssets();
+            return story;
+        }
+
+        // 인트로를 다시 보고 싶을 때(처음 한 번만 재생 설정이라 한 번 보면 저장됨)
+        [MenuItem("Anomaly/Reset Intro Story Seen")]
+        static void ResetStorySeen()
+        {
+            PlayerPrefs.DeleteKey(Anomaly.Presenter.Lobby.LobbyPresenter.StorySeenKey);
+            Debug.Log("[LobbyBuilder] 인트로 스토리 본 기록을 지웠음. 다음 게임 시작 때 다시 재생됨");
         }
 
         // Build Profiles 씬 목록: Lobby(0) → Level_Corridor(1) → 나머지 기존 순서
