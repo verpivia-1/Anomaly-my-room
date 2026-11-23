@@ -42,6 +42,8 @@ namespace Anomaly.Presenter.Anomalies
             if (targets.TryGetValue(anomaly.Id, out var view)) view.Revert();
         }
 
+        public bool TryGetTarget(string id, out AnomalyTargetView view) => targets.TryGetValue(id ?? string.Empty, out view);
+
         public void RevertAll()
         {
             foreach (var view in targets.Values) view.Revert();

@@ -255,7 +255,8 @@ namespace Anomaly.Editor.Level
             Anom(Prop("couch_pillows", p, -8, 0, 9.1f, 180), Living, "couch");
             Anom(Prop("table_low", p, -8, 0, 6.6f, 0), Living);
             Anom(Prop("armchair", p, -11, 0, 6.0f, 90), Living, "armchair_pillows");
-            Anom(Prop("cabinet_medium_decorated", p, -4.6f, 0, 6.3f, -90), Living, "cabinet_medium");
+            Anom(Prop("cabinet_medium_decorated", p, -4.6f, 0, 6.3f, -90), Living); // 장식 빠지는 교체(LS04)는 탑뷰에서 구분이 너무 어려워 삭제
+            SkipSwapId(Living);
             Anom(Prop("lamp_standing", p, -11.2f, 0, 9.2f, 0), Living);
             SetInspectPoint(Anom(Prop("pictureframe_large_B", p, -8, 2.6f, 10, 180), Living), p, -8f, 7.9f); // 소파 앞에서 조사
             Anom(Prop("shelf_B_large_decorated", p, -12, 2.2f, 4.0f, 90), Living, "shelf_B_large");
@@ -274,7 +275,8 @@ namespace Anomaly.Editor.Level
             // 네 번째 의자는 식탁 서쪽 끝(머리 자리)에서 동쪽을 봄.
             // 북쪽에 두면 식탁과 북쪽 벽 사이가 막혀 벽 액자를 조사할 수 없음. ID(DC06, DS05)는 그대로
             Anom(Prop("chair_A", p, -1.7f, 0, 6.4f, 90), Dining, "chair_A_wood");
-            Anom(Prop("cabinet_medium_decorated", p, -2.2f, 0, 9.45f, 180), Dining, "cabinet_medium");
+            Anom(Prop("cabinet_medium_decorated", p, -2.2f, 0, 9.45f, 180), Dining); // 장식 빠지는 교체(DS06)는 탑뷰에서 구분이 너무 어려워 삭제
+            SkipSwapId(Dining);
             Anom(Prop("cabinet_medium", p, 2.2f, 0, 9.45f, 180), Dining, "cabinet_medium_decorated");
             Anom(Prop("book_set", p, 1.7f, 1.25f, 9.45f, 180), Dining);
             Anom(Prop("lamp_table", p, 2.8f, 1.0f, 9.45f, 0), Dining);
@@ -397,6 +399,9 @@ namespace Anomaly.Editor.Level
             point.localPosition = new Vector3(x, 0f, z);
             SetRef(inspectable, "inspectPoint", point);
         }
+
+        // 삭제한 모델 교체 이상현상의 ID 자리를 비워 둠(뒤 ID가 밀리지 않게)
+        static void SkipSwapId(AnomalyRoom room) => NextCount(swapCounts, room);
 
         static void SkipAnomalyIds(AnomalyRoom room, bool withSwap)
         {

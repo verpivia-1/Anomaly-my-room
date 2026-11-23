@@ -27,7 +27,7 @@ namespace Anomaly.Presenter.Loop
 
         // 맵 전환 직후 피드백 문구(스토리 연출)
         private const string CorrectSleepMessage = "역시 내 집이 맞았어";      // 잠들기로 맞힘
-        private const string CorrectLeaveMessage = "역시 내 집이 아니였어";    // 나가기로 맞힘
+        private const string CorrectLeaveMessage = "역시 내 집이 아니었어";    // 나가기로 맞힘
         private const string WrongMessage = "분명 맞는거 같았는데...";        // 틀려서 0번 맵으로
 
         public LoopPresenter(LoopModel loop, GameRuleSettings rules, AnomalyPool pool, Random random,
@@ -144,6 +144,42 @@ namespace Anomaly.Presenter.Loop
             playerView.Teleport(startPoint.position, startPoint.rotation);
             if (cameraView != null) cameraView.SnapToTarget();
         }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        // ---------- 디버그(Anomaly > Debug Window) ----------
+        // 맵 번호와 이상현상을 바로 지정(풀에서 뽑지 않음, 플레이어 위치 그대로, 페이드 없음)
+        public void DebugSetMap(int mapNumber, AnomalyData anomaly)
+        {
+            if (loop.Phase != LoopPhase.Playing) return;
+            mapNumber = Mathf.Clamp(mapNumber, rules.SafeMapNumber, rules.GoalMapNumber - 1);
+            anomalies.Revert(loop.CurrentAnomaly);
+            loop.EnterMap(mapNumber, anomaly != null, anomaly);
+            anomalies.Apply(loop.CurrentAnomaly);
+            if (mapSign != null) mapSign.SetNumber(mapNumber);
+        }
+
+        // 풀에서 정상 규칙대로 다시 뽑음(이상현상 확률 포함)
+        public void DebugRerollMap(int mapNumber)
+        {
+            if (loop.Phase != LoopPhase.Playing) return;
+            anomalies.Revert(loop.CurrentAnomaly);
+            EnterMap(Mathf.Clamp(mapNumber, rules.SafeMapNumber, rules.GoalMapNumber - 1));
+        }
+
+        // 팝업 없이 정답/오답으로 판정 → 평소처럼 페이드·전환·피드백
+        public void DebugAnswer(bool correct)
+        {
+            if (loop.Phase != LoopPhase.Playing) return;
+            var right = loop.HasAnomaly ? Decision.Leave : Decision.Sleep;
+            var chosen = correct ? right : (right == Decision.Leave ? Decision.Sleep : Decision.Leave);
+            loop.BeginDecision(chosen);
+            loop.EndDecision();
+            Resolve(chosen);
+        }
+
+        public int DebugPoolRemaining => pool.RemainingCount;
+        public int DebugGoalMapNumber => rules.GoalMapNumber;
+#endif
 
         private void EnterMap(int mapNumber)
         {

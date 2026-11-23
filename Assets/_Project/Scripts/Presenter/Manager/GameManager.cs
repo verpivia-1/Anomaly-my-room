@@ -56,6 +56,8 @@ namespace Anomaly.Presenter.Manager
         private DecisionPresenter decisionPresenter;
         private MenuPresenter menuPresenter;
         private InteractionPresenter interactionPresenter;
+        private AnomalyPresenter anomalyPresenter;
+        private InspectPresenter inspectPresenter;
 
         public PlayerModel PlayerModel => playerModel;
         public LoopModel LoopModel => loopModel;
@@ -78,12 +80,13 @@ namespace Anomaly.Presenter.Manager
             loopModel = new LoopModel();
             var pool = new AnomalyPool(anomalyCatalog.Anomalies, random);
             var anomalies = new AnomalyPresenter(anomalyTargets, anomalyCatalog.Anomalies);
+            anomalyPresenter = anomalies;
 
             playerMovement = new PlayerMovementPresenter(playerModel, movementSettings, playerInputView, playerView);
             loopPresenter = new LoopPresenter(loopModel, ruleSettings, pool, random, anomalies,
                 playerView, cameraView, startPoint, mapSign, endingView, screenFade, mapFeedback);
             decisionPresenter = new DecisionPresenter(loopModel, playerModel, loopPresenter, exitZone, confirmPopup);
-            var inspectPresenter = new InspectPresenter(loopModel, cameraView, playerView, playerInputView, inspectPanel);
+            inspectPresenter = new InspectPresenter(loopModel, cameraView, playerView, playerInputView, inspectPanel);
             menuPresenter = new MenuPresenter(loopModel, pauseMenu, endingView, screenFade, lobbySceneName);
             interactionPresenter = new InteractionPresenter(loopModel, playerInputView, playerView, bedZone, inspectables,
                 interactPrompt, decisionPresenter, inspectPresenter, menuPresenter);
@@ -93,6 +96,48 @@ namespace Anomaly.Presenter.Manager
             if (cameraView != null) cameraView.SetTarget(playerView.transform);
             if (wallFadeView != null) wallFadeView.SetTarget(playerView.transform);
         }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        // ---------- 디버그(Anomaly > Debug Window에서 사용) ----------
+        public System.Collections.Generic.IReadOnlyList<AnomalyData> DebugCatalog => anomalyCatalog != null ? anomalyCatalog.Anomalies : null;
+        public int DebugPoolRemaining => loopPresenter?.DebugPoolRemaining ?? 0;
+        public int DebugGoalMapNumber => loopPresenter?.DebugGoalMapNumber ?? 8;
+
+        public void DebugSetMap(int mapNumber, AnomalyData anomaly)
+        {
+            CloseInspectForDebug();
+            loopPresenter?.DebugSetMap(mapNumber, anomaly);
+        }
+
+        public void DebugRerollMap(int mapNumber)
+        {
+            CloseInspectForDebug();
+            loopPresenter?.DebugRerollMap(mapNumber);
+        }
+
+        public void DebugAnswer(bool correct)
+        {
+            CloseInspectForDebug();
+            loopPresenter?.DebugAnswer(correct);
+        }
+
+        // 이상현상이 붙은 물건을 조사 화면처럼 클로즈업(복도 이상현상은 대상 물건이 없어 false)
+        public bool DebugView(AnomalyData anomaly)
+        {
+            if (anomaly == null || anomalyPresenter == null || inspectPresenter == null) return false;
+            if (!anomalyPresenter.TryGetTarget(anomaly.Id, out var view)) return false;
+            var inspectable = view.GetComponent<InspectableView>();
+            if (inspectable == null) return false;
+            CloseInspectForDebug();
+            inspectPresenter.Open(inspectable);
+            return true;
+        }
+
+        private void CloseInspectForDebug()
+        {
+            if (loopModel != null && loopModel.Phase == LoopPhase.Inspecting) inspectPresenter?.Close();
+        }
+#endif
 
         // 다른 View들의 Awake(팝업 숨기기 등)가 끝난 뒤 0번 맵 시작
         private void Start()

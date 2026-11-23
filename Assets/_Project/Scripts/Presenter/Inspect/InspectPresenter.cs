@@ -33,7 +33,17 @@ namespace Anomaly.Presenter.Inspect
             loop.SetPhase(LoopPhase.Inspecting);
             if (cameraView != null) cameraView.FocusOn(target.GetBounds(), playerView.Position);
             playerView.SetVisible(false);
-            if (panel != null) panel.Show(target.DisplayName, target.Description, string.Format(CloseHintFormat, input.InteractKeyName));
+            // 지금은 "소파다", "책이다"처럼 사물 이름만 보여줌(설명 문구는 나중에)
+            if (panel != null) panel.Show(Declare(target.DisplayName), string.Empty, string.Format(CloseHintFormat, input.InteractKeyName));
+        }
+
+        // 마지막 글자에 받침이 있으면 "이다", 없으면 "다"(소파다 / 책이다)
+        private static string Declare(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name;
+            char last = name[name.Length - 1];
+            bool hasFinal = last >= '가' && last <= '힣' && (last - '가') % 28 != 0;
+            return name + (hasFinal ? "이다" : "다");
         }
 
         public void Close()
