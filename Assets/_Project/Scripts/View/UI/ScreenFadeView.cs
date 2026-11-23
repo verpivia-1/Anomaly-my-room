@@ -16,7 +16,7 @@ namespace Anomaly.View.UI
 
         [Header("잠들기")]
         [SerializeField] private Sprite sleepImage;
-        [SerializeField] private Color sleepBackground = new Color(0.02f, 0.03f, 0.08f);
+        [SerializeField] private Color sleepBackground = Color.black;
 
         [Header("나가기")]
         [SerializeField] private Sprite leaveImage;

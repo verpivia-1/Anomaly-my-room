@@ -195,6 +195,7 @@ namespace Anomaly.Editor.Lobby
             cam.nearClipPlane = 0.03f;
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = Color.black;
+            cam.gameObject.AddComponent<AudioListener>(); // 소리를 듣는 귀. 씬에 하나만
             cam.transform.position = new Vector3(0, 1.75f, -HalfD + 0.1f) * s;
             cam.transform.LookAt(new Vector3(0, 0.85f, 0.35f) * s);
         }

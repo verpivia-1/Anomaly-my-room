@@ -6,6 +6,7 @@
 // 판정용 오브젝트(출구 지역, 침대 지역, 시작 지점, 맵 번호 푯말, 확인 팝업, 엔딩)와 규칙·이상현상 데이터 에셋도 여기서 만들고 연결한다.
 using System.Collections.Generic;
 using Anomaly.Editor.Animations;
+using Anomaly.Editor.Art;
 using Anomaly.Model.Anomalies;
 using Anomaly.Model.Loop;
 using Anomaly.Model.Player;
@@ -48,6 +49,7 @@ namespace Anomaly.Editor.Level
         const string SfxDir = "Assets/_Project/Audio/SFX";
         const string SfxCorrectName = "SFX_Correct";
         const string SfxWrongName = "SFX_Wrong";
+        const string FootstepDir = SfxDir + "/Footsteps"; // 이 폴더의 오디오를 전부 발소리로 씀
         const string PlayerSettingsDir = "Assets/_Project/Data/Player";
         const string PlayerSettingsPath = PlayerSettingsDir + "/PlayerMovementSettings.asset";
 
@@ -390,6 +392,7 @@ namespace Anomaly.Editor.Level
             cam.fieldOfView = 40;
             cam.backgroundColor = new Color(0.05f, 0.05f, 0.06f);
             cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.gameObject.AddComponent<AudioListener>(); // 소리를 듣는 귀. 씬에 하나만
             cam.transform.position = new Vector3(-9.5f, 10, -6.5f) * s;
             cam.transform.LookAt(new Vector3(-9.5f, 0, 0) * s);
 
@@ -524,6 +527,9 @@ namespace Anomaly.Editor.Level
             SetRef(screenFade, "picture", picture);
             SetRef(screenFade, "sleepImage", LoadFadeImage(FadeSleepImagePath));
             SetRef(screenFade, "leaveImage", LoadFadeImage(FadeLeaveImagePath));
+            // 페이드 이미지가 흑백이라 배경도 검정으로 통일
+            SetColor(screenFade, "sleepBackground", Color.black);
+            SetColor(screenFade, "leaveBackground", Color.black);
         }
 
         static AudioClip LoadSfx(string name)
@@ -538,12 +544,24 @@ namespace Anomaly.Editor.Level
             return null;
         }
 
+        static Object[] LoadFootstepClips()
+        {
+            if (!AssetDatabase.IsValidFolder(FootstepDir)) return new Object[0];
+            var list = new List<Object>();
+            foreach (var guid in AssetDatabase.FindAssets("t:AudioClip", new[] { FootstepDir }))
+                list.Add(AssetDatabase.LoadAssetAtPath<AudioClip>(AssetDatabase.GUIDToAssetPath(guid)));
+            list.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+            return list.ToArray();
+        }
+
         static Sprite LoadFadeImage(string path)
         {
             EnsureFolder(FadeImageDir);
+            SpriteImportUtil.EnsureSprite(path); // 넣기만 하면 Sprite로 임포트되게
             var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
             if (sprite == null)
-                Debug.LogWarning($"[LevelLayoutBuilder] 페이드 이미지 없음(배경색만 나옴): {path} — PNG를 넣고 Texture Type을 Sprite로 바꾼 뒤 다시 실행");
+                Debug.LogWarning($"[LevelLayoutBuilder] 페이드 이미지 없음(배경색만 나옴): {path}" +
+                                 (path == LeaveImageRenderer.OutputPath ? " — Anomaly > Render Leave Image로 만들 수 있음" : ""));
             return sprite;
         }
 
@@ -639,6 +657,17 @@ namespace Anomaly.Editor.Level
             if (playerAnimator != null && animController != null)
                 playerAnimator.runtimeAnimatorController = animController;
             SetString(playerView, "speedParameter", PlayerAnimatorBuilder.SpeedParameter);
+
+            // 발소리(2D 소리. 탑뷰라 카메라가 멀어 3D로 하면 작게 들림)
+            var stepAudio = player.AddComponent<AudioSource>();
+            stepAudio.playOnAwake = false;
+            stepAudio.spatialBlend = 0f;
+            var footsteps = player.AddComponent<FootstepView>();
+            SetRef(footsteps, "audioSource", stepAudio);
+            var stepClips = LoadFootstepClips();
+            if (stepClips.Length == 0) Debug.LogWarning($"[LevelLayoutBuilder] 발소리 없음: {FootstepDir}");
+            SetRefArray(footsteps, "clips", stepClips);
+            SetRef(playerView, "footsteps", footsteps);
 
             playerInputView = player.AddComponent<PlayerInputView>();
             var moveRef = FindInputActionReference(InputActionsPath, MoveActionName);

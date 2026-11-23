@@ -10,6 +10,8 @@ namespace Anomaly.View.Player
         [SerializeField] private Animator animator;
         [Tooltip("이동 속도를 넘길 Animator float 파라미터 이름. 사용하지 않는 다면 비워둘 것. 그럼 자동으로 사용안함")]
         [SerializeField] private string speedParameter = "";
+        [Tooltip("비워 두면 발소리 없음")]
+        [SerializeField] private FootstepView footsteps;
 
         // 높이 차이가 없는 맵이라 진짜 중력 대신, 매 프레임 바닥 쪽으로 살짝 눌러 붙여 둔다(m/s)
         private const float GroundStickSpeed = -2f;
@@ -32,8 +34,10 @@ namespace Anomaly.View.Player
             var velocity = new Vector3(horizontalVelocity.x, GroundStickSpeed, horizontalVelocity.z);
             characterController.Move(velocity * deltaTime);
 
+            float horizontalSpeed = new Vector3(horizontalVelocity.x, 0f, horizontalVelocity.z).magnitude;
             if (hasSpeedParameter)
-                animator.SetFloat(speedHash, new Vector3(horizontalVelocity.x, 0f, horizontalVelocity.z).magnitude);
+                animator.SetFloat(speedHash, horizontalSpeed);
+            if (footsteps != null) footsteps.Advance(horizontalSpeed * deltaTime);
         }
 
         // 회전 로직

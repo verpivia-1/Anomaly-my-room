@@ -83,6 +83,9 @@
 | [Haon SD series Free Bundle](https://assetstore.unity.com/packages/3d/characters/humanoids/haon-sd-series-free-bundle-84992) — 캐릭터 | Unity-Chan License (UCL) | 미포함 |
 | Haon SD series Free Bundle — 캐릭터 외 | Unity Asset Store EULA | 미포함 |
 | Unity Chan Spring Bone (`Packages/com.unity.springbone`) | MIT | 포함 |
+| [Kenney RPG Audio](https://kenney.nl/assets/rpg-audio) — 발소리 | CC0 | 포함 |
+| [Kenney Interface Sounds](https://kenney.nl/assets/interface-sounds) — 정답·오답 효과음 | CC0 | 포함 |
+| 나가기 페이드 이미지(`Fade_Leave.png`) — HAON 캐릭터 렌더링 실루엣 | Unity-Chan License (UCL) | 포함 |
 
 This work is provided under Unity-Chan License Terms. © Unity Technologies Japan/UCL
 
