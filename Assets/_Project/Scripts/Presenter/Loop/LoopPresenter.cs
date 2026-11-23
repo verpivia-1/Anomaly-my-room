@@ -47,12 +47,15 @@ namespace Anomaly.Presenter.Loop
             this.feedback = feedback;
         }
 
+        // 0번 맵으로 시작. 암전된 화면에서 시작해 밝아진 뒤 조작 가능(로비에서 넘어올 때 이어지는 연출)
         public void StartLoop()
         {
+            loop.SetPhase(LoopPhase.Transitioning);
             anomalies.RevertAll();
             EnterMap(rules.SafeMapNumber);
             MovePlayerToStart();
-            loop.SetPhase(LoopPhase.Playing);
+            if (fade != null) fade.SetCovered(ScreenFadeKind.Plain);
+            FadeIn(() => loop.SetPhase(LoopPhase.Playing));
         }
 
         // 팝업에서 잠들기/나가기를 확인했을 때. 팝업 상태(Deciding)에서만 받음

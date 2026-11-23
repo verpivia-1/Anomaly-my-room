@@ -22,6 +22,9 @@ namespace Anomaly.View.UI
         [SerializeField] private Sprite leaveImage;
         [SerializeField] private Color leaveBackground = Color.black;
 
+        [Header("단순 암전")]
+        [SerializeField] private Color plainBackground = Color.black;
+
         [Header("시간(초)")]
         [SerializeField, Min(0f)] private float fadeOutDuration = 0.35f;
         [Tooltip("완전히 덮인 상태로 멈추는 시간. 이미지를 보여줄 시간")]
@@ -45,13 +48,31 @@ namespace Anomaly.View.UI
             Run(1f, fadeOutDuration, holdDuration, onCovered);
         }
 
-        // 마지막 FadeOut의 모습 그대로 걷어냄
+        // 애니메이션 없이 즉시 덮인 상태로(씬 시작 직후 FadeIn으로 밝히는 용도)
+        public void SetCovered(ScreenFadeKind kind)
+        {
+            if (canvasGroup == null) return;
+            if (running != null) StopCoroutine(running);
+            running = null;
+            ApplyStyle(kind);
+            canvasGroup.alpha = 1f;
+            canvasGroup.blocksRaycasts = true;
+        }
+
+        // 마지막 FadeOut(또는 SetCovered)의 모습 그대로 걷어냄
         public void FadeIn(Action onCleared) => Run(0f, fadeInDuration, 0f, onCleared);
 
         private void ApplyStyle(ScreenFadeKind kind)
         {
-            var sprite = kind == ScreenFadeKind.Sleep ? sleepImage : leaveImage;
-            if (background != null) background.color = kind == ScreenFadeKind.Sleep ? sleepBackground : leaveBackground;
+            Sprite sprite;
+            Color color;
+            switch (kind)
+            {
+                case ScreenFadeKind.Sleep: sprite = sleepImage; color = sleepBackground; break;
+                case ScreenFadeKind.Leave: sprite = leaveImage; color = leaveBackground; break;
+                default: sprite = null; color = plainBackground; break;
+            }
+            if (background != null) background.color = color;
             if (picture != null)
             {
                 picture.sprite = sprite;

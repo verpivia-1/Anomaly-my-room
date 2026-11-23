@@ -72,6 +72,7 @@ public float MoveSpeed => moveSpeed;
 
 - `Assets/Scenes/Level_Corridor.unity`는 메뉴 **Anomaly > Build Level Layout**(`LevelLayoutBuilder.cs`)이 실행할 때마다 새로 만들어 덮어쓴다.
 - 배치를 바꿀 때는 씬을 직접 고치지 말고 `LevelLayoutBuilder.cs`를 고친 뒤 다시 실행한다.
+- `Assets/Scenes/Lobby.unity`도 같은 방식이다. 메뉴 **Anomaly > Build Lobby**(`LobbyBuilder.cs`)가 만들고, Build Profiles 씬 목록을 Lobby → Level_Corridor 순서로 맞춘다.
 
 ## 6. 입력
 
